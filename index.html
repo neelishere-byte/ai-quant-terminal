@@ -3,55 +3,178 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Quant Terminal</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Quant Terminal 3.0</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#080d18;color:#fff;font-family:Arial,sans-serif}
-header{padding:22px;background:#111a2b;border-bottom:1px solid #26334b}
-h1{margin:0;color:#64e5b1;font-size:23px}
-header p{color:#9baac2;margin-bottom:0}
-main{padding:18px;max-width:1000px;margin:auto}
-.status{color:#64e5b1;font-size:13px;margin:20px 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:13px}
-.card{background:#131e31;border:1px solid #263751;padding:18px;border-radius:12px}
-.card small{color:#9baac2}
-.card h2{font-size:21px;margin-bottom:5px}
-.green{color:#64e5b1}
-button{background:#64e5b1;color:#07111b;border:0;padding:13px 18px;border-radius:8px;font-weight:bold}
-footer{color:#9baac2;padding:25px;text-align:center}
+body{margin:0;background:#080d18;color:#f5f7ff;font-family:Arial,sans-serif}
+header{background:#111b2e;padding:20px;border-bottom:1px solid #293951}
+h1{margin:0;color:#65e5b2;font-size:23px}
+header p{color:#9aabc4;font-size:13px}
+main{max-width:1150px;margin:auto;padding:18px}
+.card{background:#131f33;border:1px solid #293b57;border-radius:12px;padding:16px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}
+h2{font-size:18px}
+small,.muted{color:#9aabc4}
+select,input{width:100%;padding:12px;background:#080f1d;color:white;border:1px solid #344966;border-radius:8px;margin:7px 0 14px}
+button{padding:11px 15px;border:0;border-radius:8px;background:#65e5b2;color:#07111b;font-weight:bold;cursor:pointer}
+.symbol{background:#1b2b43;color:white;margin:4px;padding:9px;border-radius:7px}
+.price{font-size:25px;font-weight:bold;color:#65e5b2;margin:12px 0}
+canvas{width:100%;height:210px;background:#0b1424;border-radius:8px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.status{color:#65e5b2;font-size:13px;margin:12px 0 20px}
+footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
+@media(max-width:500px){main{padding:12px}}
 </style>
 </head>
 <body>
 <header>
-<h1>AI QUANT TERMINAL</h1>
-<p>Intelligent Market Research Platform</p>
+<h1>AI QUANT TERMINAL 3.0</h1>
+<p>Global Markets | AI Research | Paper Trading</p>
 </header>
 <main>
-<div class="status">● SYSTEM ONLINE | DEMO MODE ONLY</div>
-<h2>Trading Dashboard</h2>
-<div class="grid">
-<div class="card"><small>MARKET</small><h2>XAUUSD</h2><small>Gold</small></div>
-<div class="card"><small>TRADING MODE</small><h2 class="green">DEMO</h2><small>Virtual trading only</small></div>
-<div class="card"><small>AI RESEARCH</small><h2>READY</h2><small>Research module</small></div>
-<div class="card"><small>RISK MANAGER</small><h2 class="green">ACTIVE</h2><small>Safety controls</small></div>
-</div>
-<h2 style="margin-top:30px">AI Modules</h2>
-<div class="grid">
-<div class="card">AI Research</div>
-<div class="card">Strategy Builder</div>
-<div class="card">Backtesting</div>
-<div class="card">News Analysis</div>
-<div class="card">Risk Management</div>
-<div class="card">Paper Trading</div>
-</div>
-<h2 style="margin-top:30px">System Controls</h2>
+<div class="status">● SYSTEM ONLINE | DEMO DATA ONLY | LIVE TRADING DISABLED</div>
+
+<h2>Global Market Selector</h2>
 <div class="card">
-<p>Trading: <span class="green">Demo Only</span></p>
+<label>Select Market Category</label>
+<select id="market" onchange="loadSymbols()">
+<option value="India Stocks">Indian Stocks – NSE / BSE</option>
+<option value="US Stocks">US Stocks – NASDAQ / NYSE</option>
+<option value="Global Stocks">Global Stocks</option>
+<option value="Forex">Forex</option>
+<option value="Crypto">Cryptocurrency</option>
+<option value="Metals">Metals – Gold / Silver / Copper</option>
+<option value="Energy">Energy – Oil / Natural Gas</option>
+<option value="Indices">Global Indices</option>
+<option value="Agriculture">Agriculture Commodities</option>
+<option value="Futures">Futures</option>
+<option value="Options">Options</option>
+</select>
+
+<label>Search Symbol</label>
+<input id="search" placeholder="Search RELIANCE, BTCUSD, EURUSD..." oninput="loadSymbols()">
+<div id="symbols" class="row"></div>
+</div>
+
+<h2>Selected Market</h2>
+<div class="grid">
+<div class="card"><small>ASSET CATEGORY</small><div class="price" id="category">Indian Stocks</div></div>
+<div class="card"><small>SELECTED SYMBOL</small><div class="price" id="symbol">RELIANCE</div></div>
+<div class="card"><small>DATA MODE</small><div class="price">SAMPLE</div></div>
+<div class="card"><small>TRADING MODE</small><div class="price">DEMO</div></div>
+</div>
+
+<h2>Market Chart</h2>
+<div class="card">
+<div id="chartTitle">RELIANCE – Sample Chart</div>
+<div class="price" id="currentPrice">₹1,250.00</div>
+<canvas id="chart"></canvas>
+<small>Illustrative sample prices, not live exchange data.</small>
+</div>
+
+<h2>My Watchlist</h2>
+<div class="card">
+<div id="watchlist" class="row"></div>
+</div>
+
+<h2>AI Research Center</h2>
+<div class="grid">
+<div class="card"><b>Market Research</b><p class="muted">Coming soon</p></div>
+<div class="card"><b>Pattern Scanner</b><p class="muted">Coming soon</p></div>
+<div class="card"><b>Strategy Builder</b><p class="muted">Coming soon</p></div>
+<div class="card"><b>Backtesting</b><p class="muted">Coming soon</p></div>
+<div class="card"><b>News Intelligence</b><p class="muted">Coming soon</p></div>
+<div class="card"><b>Risk Manager</b><p class="muted">Coming soon</p></div>
+</div>
+
+<h2>Demo Trading</h2>
+<div class="card">
+<p>Broker Connection: Not Connected</p>
 <p>Live Orders: Disabled</p>
-<button onclick="alert('Demo dashboard is running!')">Test Dashboard</button>
+<p>Paper Trading Engine: Development Stage</p>
+<small>We will add a simulated order engine after market data and contract rules are configured.</small>
 </div>
 </main>
-<footer>AI QUANT TERMINAL © 2026 | Free Development Version</footer>
+<footer>AI QUANT TERMINAL 3.0 | Free Development | No Live Orders</footer>
+
+<script>
+const markets={
+"India Stocks":[["RELIANCE","₹1,250"],["TCS","₹3,400"],["HDFCBANK","₹1,650"],["INFY","₹1,500"],["ICICIBANK","₹1,100"],["SBIN","₹750"],["TATAMOTORS","₹680"]],
+"US Stocks":[["AAPL","$220"],["MSFT","$420"],["NVDA","$140"],["GOOGL","$180"],["AMZN","$210"],["TSLA","$330"]],
+"Global Stocks":[["TSM","$190"],["BABA","$110"],["SONY","¥3,200"],["HSBC","£8"],["SAP","€220"]],
+"Forex":[["EURUSD","1.0800"],["GBPUSD","1.2700"],["USDJPY","150.00"],["AUDUSD","0.6500"],["USDCAD","1.3900"]],
+"Crypto":[["BTCUSD","$90,000"],["ETHUSD","$3,000"],["SOLUSD","$180"],["XRPUSD","$2.00"],["ADAUSD","$0.70"]],
+"Metals":[["XAUUSD","$2,650"],["XAGUSD","$31"],["COPPER","$4.50"],["PLATINUM","$1,000"]],
+"Energy":[["WTI","$70"],["BRENT","$74"],["NATGAS","$3.50"]],
+"Indices":[["NIFTY50","24,000"],["SENSEX","79,000"],["SPX","5,900"],["NASDAQ100","21,000"],["DAX","20,000"],["NIKKEI","38,000"]],
+"Agriculture":[["WHEAT","Sample"],["CORN","Sample"],["SOYBEAN","Sample"],["COTTON","Sample"],["SUGAR","Sample"]],
+"Futures":[["NIFTY FUT","Sample"],["BANKNIFTY FUT","Sample"],["GOLD FUT","Sample"],["CRUDE FUT","Sample"]],
+"Options":[["NIFTY CE","Sample"],["NIFTY PE","Sample"],["BANKNIFTY CE","Sample"],["BANKNIFTY PE","Sample"]]
+};
+
+let selected="RELIANCE";
+let watch=["RELIANCE","BTCUSD","EURUSD","XAUUSD","NIFTY50"];
+let points=Array.from({length:45},(_,i)=>100+Math.sin(i/3)*5+i*.2);
+
+function loadSymbols(){
+let category=document.getElementById("market").value;
+let q=document.getElementById("search").value.toUpperCase();
+document.getElementById("category").textContent=category;
+let list=markets[category].filter(x=>x[0].includes(q));
+let area=document.getElementById("symbols");
+area.innerHTML="";
+list.forEach(item=>{
+let b=document.createElement("button");
+b.className="symbol";
+b.textContent=item[0];
+b.onclick=()=>choose(item[0],category,item[1]);
+area.appendChild(b);
+});
+}
+function choose(name,category,price){
+selected=name;
+document.getElementById("symbol").textContent=name;
+document.getElementById("category").textContent=category;
+document.getElementById("chartTitle").textContent=name+" – Sample Chart";
+document.getElementById("currentPrice").textContent=price;
+points=Array.from({length:45},(_,i)=>100+Math.sin(i/3)*5+i*.2);
+draw();
+}
+function draw(){
+let c=document.getElementById("chart");
+let ctx=c.getContext("2d");
+let w=c.clientWidth,h=c.clientHeight;
+c.width=w*devicePixelRatio;c.height=h*devicePixelRatio;
+ctx.scale(devicePixelRatio,devicePixelRatio);
+let min=Math.min(...points)-2,max=Math.max(...points)+2;
+ctx.strokeStyle="#65e5b2";ctx.lineWidth=2;ctx.beginPath();
+points.forEach((v,i)=>{
+let x=i*w/(points.length-1),y=h-(v-min)/(max-min)*h;
+if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+});
+ctx.stroke();
+}
+function renderWatch(){
+let area=document.getElementById("watchlist");
+area.innerHTML="";
+watch.forEach(s=>{
+let b=document.createElement("button");
+b.className="symbol";b.textContent=s;
+b.onclick=()=>{
+for(let cat in markets){
+let item=markets[cat].find(x=>x[0]===s);
+if(item){document.getElementById("market").value=cat;choose(s,cat,item[1]);break;}
+}
+};
+area.appendChild(b);
+});
+}
+window.addEventListener("resize",draw);
+loadSymbols();
+renderWatch();
+choose("RELIANCE","India Stocks","₹1,250");
+</script>
 </body>
 </html>
