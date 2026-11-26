@@ -1,0 +1,64 @@
+name: Refresh historical market data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "25 1 * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install data library
+        run: pip install yfinance pandas
+      - name: Download ten years of daily candles
+        run: |
+          python - <<'PY'
+          import json, os
+          import yfinance as yf
+          symbols = {
+              "GC=F": "gold_futures",
+              "XAUUSD=X": "gold_spot",
+              "SI=F": "silver",
+              "CL=F": "crude_oil",
+              "^NSEI": "nifty50",
+              "BTC-USD": "bitcoin"
+          }
+          os.makedirs("data", exist_ok=True)
+          output = {"updated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), "markets": {}}
+          for ticker, key in symbols.items():
+              try:
+                  df = yf.download(ticker, period="10y", interval="1d", auto_adjust=False, progress=False)
+                  if df.empty:
+                      print("No data:", ticker)
+                      continue
+                  if hasattr(df.columns, "nlevels") and df.columns.nlevels > 1:
+                      df.columns = df.columns.get_level_values(0)
+                  rows = []
+                  for date, row in df.iterrows():
+                      vals = [row.get(c) for c in ["Open","High","Low","Close"]]
+                      if all(v is not None and str(v) != "nan" for v in vals):
+                          rows.append({"date": date.strftime("%Y-%m-%d"), "open": float(vals[0]), "high": float(vals[1]), "low": float(vals[2]), "close": float(vals[3])})
+                  if rows:
+                      output["markets"][key] = {"ticker": ticker, "candles": rows}
+                      print(ticker, len(rows), rows[0]["date"], rows[-1]["date"])
+              except Exception as exc:
+                  print("Failed", ticker, repr(exc))
+          if not output["markets"]:
+              raise SystemExit("No market data downloaded")
+          with open("data/market-data.json", "w") as f:
+              json.dump(output, f, separators=(",", ":"))
+          PY
+      - name: Commit refreshed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market-data.json
+          git diff --cached --quiet || (git commit -m "Refresh historical market data" && git push)
