@@ -254,26 +254,50 @@ document.getElementById("runMulti").addEventListener("click",()=>runLocalBacktes
 document.getElementById("downloadTrades").addEventListener("click",()=>{const cols=["date","side","entry","exit","qty","pnl","reason"];const csv=[cols.join(","),...lastTrades.map(t=>cols.map(c=>String(t[c]??"").replace(/,/g," ")).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ai-quant-trades.csv";a.click();URL.revokeObjectURL(a.href);});
 
 
+
 async function fetchYahooHistory(){
- const symbol=document.getElementById("autoSymbol").value, status=document.getElementById("btStatus"), btn=document.getElementById("loadAutoData");
+ const symbol=document.getElementById("autoSymbol").value;
+ const status=document.getElementById("btStatus");
+ const btn=document.getElementById("loadAutoData");
  btn.disabled=true;btn.textContent="Fetching...";
- status.textContent="Yahoo Finance se 10 years daily candles fetch ho rahe hain...";
+ status.textContent="Historical data source se connect kar rahe hain...";
+ const target="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=10y&interval=1d&events=history";
+ const sources=[
+  {name:"Yahoo direct",url:target},
+  {name:"CORS relay 1",url:"https://api.allorigins.win/raw?url="+encodeURIComponent(target)},
+  {name:"CORS relay 2",url:"https://corsproxy.io/?url="+encodeURIComponent(target)}
+ ];
+ let errors=[];
  try{
-  const url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=10y&interval=1d&events=history";
-  const response=await fetch(url,{cache:"no-store"});
-  if(!response.ok) throw new Error("Provider response "+response.status);
-  const json=await response.json(), result=json.chart?.result?.[0];
-  if(!result?.timestamp||!result.indicators?.quote?.[0]) throw new Error("Historical data unavailable");
+  let json=null, used="";
+  for(const source of sources){
+   try{
+    status.textContent="Trying "+source.name+"...";
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),18000);
+    const response=await fetch(source.url,{cache:"no-store",signal:controller.signal});
+    clearTimeout(timeout);
+    if(!response.ok) throw new Error("HTTP "+response.status);
+    const body=await response.text();
+    const parsed=JSON.parse(body);
+    if(parsed.contents) json=JSON.parse(parsed.contents); else json=parsed;
+    if(!json.chart?.result?.[0]) throw new Error(json.chart?.error?.description||"No candle payload");
+    used=source.name;break;
+   }catch(e){errors.push(source.name+": "+(e.name==="AbortError"?"timeout":e.message));}
+  }
+  const result=json?.chart?.result?.[0];
+  if(!result?.timestamp||!result.indicators?.quote?.[0]) throw new Error("All data sources failed. "+errors.join(" | "));
   const q=result.indicators.quote[0], rows=[];
   for(let i=0;i<result.timestamp.length;i++){
    const v=[q.open[i],q.high[i],q.low[i],q.close[i]];
    if(v.every(x=>x!==null&&Number.isFinite(x))) rows.push({date:new Date(result.timestamp[i]*1000).toISOString().slice(0,10),open:v[0],high:v[1],low:v[2],close:v[3]});
   }
-  if(rows.length<100) throw new Error("Only "+rows.length+" valid candles returned");
+  if(rows.length<100) throw new Error("Valid candles kam mile: "+rows.length);
   candleData=rows;
-  status.textContent="AUTO DATA LOADED: "+symbol+" | "+rows.length+" daily candles | "+rows[0].date+" to "+rows[rows.length-1].date+". Ab backtest chalao.";
- }catch(err){status.textContent="Auto fetch failed: "+err.message+". Agar browser CORS block kare to CSV fallback use kar sakte ho.";}
- finally{btn.disabled=false;btn.textContent="Fetch 10 Years Data Automatically";}
+  status.textContent="AUTO DATA LOADED via "+used+": "+symbol+" | "+rows.length+" daily candles | "+rows[0].date+" to "+rows[rows.length-1].date+". Ab ATR ya EMA + RSI backtest chalao.";
+ }catch(err){
+  status.textContent="Automatic data fetch abhi bhi fail hua. "+err.message+" Network/CORS ya Yahoo rate limit ho sakta hai.";
+ }finally{btn.disabled=false;btn.textContent="Fetch 10 Years Data Automatically";}
 }
 document.getElementById("loadAutoData").addEventListener("click",fetchYahooHistory);
 
