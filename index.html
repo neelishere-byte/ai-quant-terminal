@@ -97,7 +97,7 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
 <h2>Strategy Lab — Historical CSV Backtest</h2>
 <div class="card">
   <p class="muted">Upload OHLCV candles (CSV columns: Date, Open, High, Low, Close; Volume optional). This runs locally in your browser. It does not use live prices or place orders.</p>
-  <label>Automatic data source</label><div class="row"><select id="autoSymbol"><option value="GC=F">Gold Futures (GC=F)</option><option value="XAUUSD=X">Gold Spot (XAUUSD=X)</option><option value="SI=F">Silver Futures (SI=F)</option><option value="CL=F">Crude Oil Futures (CL=F)</option><option value="^NSEI">NIFTY 50 (^NSEI)</option><option value="BTC-USD">Bitcoin (BTC-USD)</option></select><button id="loadAutoData" type="button">Fetch 10 Years Data Automatically</button></div><p class="muted">Yahoo Finance historical daily candles. CSV upload is optional fallback.</p>
+  <label>Automatic data source</label><div class="row"><select id="autoSymbol"><option value="GC=F">Gold Futures (GC=F)</option><option value="XAUUSD=X">Gold Spot (XAUUSD=X)</option><option value="SI=F">Silver Futures (SI=F)</option><option value="CL=F">Crude Oil Futures (CL=F)</option><option value="^NSEI">NIFTY 50 (^NSEI)</option><option value="BTC-USD">Bitcoin (BTC-USD)</option></select><button id="loadAutoData" type="button">Load 10 Years Data Automatically</button></div><p class="muted">Yahoo Finance historical daily candles. CSV upload is optional fallback.</p>
 <label>Historical market data CSV</label>
   <input id="csvFile" type="file" accept=".csv,text/csv">
   <div class="grid">
@@ -255,49 +255,26 @@ document.getElementById("downloadTrades").addEventListener("click",()=>{const co
 
 
 
+
 async function fetchYahooHistory(){
  const symbol=document.getElementById("autoSymbol").value;
  const status=document.getElementById("btStatus");
  const btn=document.getElementById("loadAutoData");
- btn.disabled=true;btn.textContent="Fetching...";
- status.textContent="Historical data source se connect kar rahe hain...";
- const target="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=10y&interval=1d&events=history";
- const sources=[
-  {name:"Yahoo direct",url:target},
-  {name:"CORS relay 1",url:"https://api.allorigins.win/raw?url="+encodeURIComponent(target)},
-  {name:"CORS relay 2",url:"https://corsproxy.io/?url="+encodeURIComponent(target)}
- ];
- let errors=[];
+ const keys={"GC=F":"gold_futures","XAUUSD=X":"gold_spot","SI=F":"silver","CL=F":"crude_oil","^NSEI":"nifty50","BTC-USD":"bitcoin"};
+ btn.disabled=true;btn.textContent="Loading...";
+ status.textContent="GitHub data store se historical candles load ho rahe hain...";
  try{
-  let json=null, used="";
-  for(const source of sources){
-   try{
-    status.textContent="Trying "+source.name+"...";
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),18000);
-    const response=await fetch(source.url,{cache:"no-store",signal:controller.signal});
-    clearTimeout(timeout);
-    if(!response.ok) throw new Error("HTTP "+response.status);
-    const body=await response.text();
-    const parsed=JSON.parse(body);
-    if(parsed.contents) json=JSON.parse(parsed.contents); else json=parsed;
-    if(!json.chart?.result?.[0]) throw new Error(json.chart?.error?.description||"No candle payload");
-    used=source.name;break;
-   }catch(e){errors.push(source.name+": "+(e.name==="AbortError"?"timeout":e.message));}
-  }
-  const result=json?.chart?.result?.[0];
-  if(!result?.timestamp||!result.indicators?.quote?.[0]) throw new Error("All data sources failed. "+errors.join(" | "));
-  const q=result.indicators.quote[0], rows=[];
-  for(let i=0;i<result.timestamp.length;i++){
-   const v=[q.open[i],q.high[i],q.low[i],q.close[i]];
-   if(v.every(x=>x!==null&&Number.isFinite(x))) rows.push({date:new Date(result.timestamp[i]*1000).toISOString().slice(0,10),open:v[0],high:v[1],low:v[2],close:v[3]});
-  }
-  if(rows.length<100) throw new Error("Valid candles kam mile: "+rows.length);
-  candleData=rows;
-  status.textContent="AUTO DATA LOADED via "+used+": "+symbol+" | "+rows.length+" daily candles | "+rows[0].date+" to "+rows[rows.length-1].date+". Ab ATR ya EMA + RSI backtest chalao.";
+  const response=await fetch("./data/market-data.json?refresh="+Date.now(),{cache:"no-store"});
+  if(!response.ok) throw new Error("Market data file abhi publish nahi hui (HTTP "+response.status+").");
+  const payload=await response.json();
+  const item=payload.markets?.[keys[symbol]];
+  if(!item?.candles?.length) throw new Error("Is symbol ka data store mein nahi mila. GitHub Actions workflow run karna hoga.");
+  candleData=item.candles.map(x=>({date:x.date,open:+x.open,high:+x.high,low:+x.low,close:+x.close})).filter(x=>[x.open,x.high,x.low,x.close].every(Number.isFinite));
+  if(candleData.length<100) throw new Error("Valid candles 100 se kam hain.");
+  status.textContent="AUTO DATA LOADED: "+symbol+" | "+candleData.length+" daily candles | "+candleData[0].date+" to "+candleData[candleData.length-1].date+". Ab backtest chalao.";
  }catch(err){
-  status.textContent="Automatic data fetch abhi bhi fail hua. "+err.message+" Network/CORS ya Yahoo rate limit ho sakta hai.";
- }finally{btn.disabled=false;btn.textContent="Fetch 10 Years Data Automatically";}
+  status.textContent="Data abhi ready nahi hai: "+err.message+" GitHub par Actions > Refresh historical market data > Run workflow karo. Ek baar successful hone ke baad CSV upload ki zarurat nahi.";
+ }finally{btn.disabled=false;btn.textContent="Load 10 Years Data Automatically";}
 }
 document.getElementById("loadAutoData").addEventListener("click",fetchYahooHistory);
 
