@@ -110,6 +110,8 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
   </div>
   <button id="runBacktest" type="button">Run ATR Breakout Backtest</button>
   <button id="runMulti" type="button">Run EMA + RSI Backtest</button>
+  <button id="runValidation" type="button">Run Train / Test Validation (2016–2022 vs 2023–2026)</button>
+  <div id="validationResults"></div>
   <div id="btStatus" class="status">Waiting for a CSV file.</div>
   <div id="btResults" class="grid"></div>
   <div id="btTrades"></div>
@@ -250,7 +252,66 @@ function runLocalBacktest(mode){
  document.getElementById("downloadTrades").style.display=trades.length?"inline-block":"none";
 }
 document.getElementById("csvFile").addEventListener("change",async e=>{try{const f=e.target.files[0];if(!f)return;candleData=parseCSV(await f.text());document.getElementById("btStatus").textContent="Loaded "+candleData.length+" valid candles. Ab CSV backtest run karo."; }catch(err){candleData=[];document.getElementById("btStatus").textContent=err.message;}});
+
+function simulateRange(mode,startIndex,endIndex,cap0,riskPct,atrN,look,slMult,rr){
+ const d=candleData,closes=d.map(x=>x.close),trades=[];
+ let equity=cap0,peak=cap0,maxDD=0,pos=null,bars=0,signals=0;
+ const warmup=Math.max(look,atrN,50)+1;
+ for(let i=warmup;i<=endIndex;i++){
+   const bar=d[i],prev=d[i-1],atr=calcATR(d,atrN,i-1);
+   if(i>=startIndex)bars++;
+   if(i>=startIndex&&pos){
+     let exit=null,reason="";
+     if(bar.low<=pos.sl){exit=pos.sl;reason="Stop Loss";}
+     else if(bar.high>=pos.tp){exit=pos.tp;reason="Take Profit";}
+     else if(i-pos.entryIndex>=100){exit=bar.close;reason="Time Exit";}
+     if(exit!==null){const pnl=(exit-pos.entry)*pos.qty;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit,qty:pos.qty,pnl,reason});pos=null;peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+   }
+   if(i>=startIndex&&!pos&&i<endIndex){
+     let signal=false;
+     if(mode==="ATR"){let top=-Infinity;for(let j=i-look-1;j<i-1;j++)top=Math.max(top,d[j].high);signal=prev.close>top;}
+     else{
+       const fast=calcEMA(closes,8,i-1),slow=calcEMA(closes,21,i-1),up=closes[i-1]>closes[i-2];
+       let gains=0,losses=0;for(let j=i-14;j<i;j++){const ch=closes[j]-closes[j-1];if(ch>0)gains+=ch;else losses-=ch;}
+       const rsi=losses===0?100:100-100/(1+gains/Math.max(losses,1e-12));
+       signal=fast>slow&&rsi>=50&&rsi<=70&&up;
+     }
+     if(signal)signals++;
+     if(signal&&Number.isFinite(atr)&&atr>0){
+       const entry=bar.open,sl=entry-atr*slMult,riskCash=equity*riskPct,qty=riskCash/(entry-sl);
+       if(qty>0&&Number.isFinite(qty))pos={entry,sl,tp:entry+(entry-sl)*rr,qty,entryIndex:i};
+     }
+   }
+ }
+ if(pos){const bar=d[endIndex],pnl=(bar.close-pos.entry)*pos.qty;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit:bar.close,qty:pos.qty,pnl,reason:"Period End"});peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+ const wins=trades.filter(t=>t.pnl>0),losers=trades.filter(t=>t.pnl<=0);
+ const gw=wins.reduce((s,t)=>s+t.pnl,0),gl=-losers.reduce((s,t)=>s+t.pnl,0);
+ return {capital:equity,returnPct:(equity/cap0-1)*100,trades:trades.length,winRate:trades.length?wins.length/trades.length*100:0,pf:gl?gw/gl:(gw?Infinity:0),maxDD,signals,bars,start:d[startIndex].date,end:d[endIndex].date};
+}
+function runTrainTestValidation(){
+ if(candleData.length<300){document.getElementById("btStatus").textContent="Validation ke liye kam se kam 300 candles load karo.";return;}
+ const cap=+document.getElementById("btCapital").value,risk=+document.getElementById("btRisk").value/100;
+ const atrN=+document.getElementById("btAtr").value,look=+document.getElementById("btLookback").value,sl=+document.getElementById("btSL").value,rr=+document.getElementById("btRR").value;
+ if(!(cap>0&&risk>0&&atrN>=2&&look>=2&&sl>0&&rr>0)){document.getElementById("btStatus").textContent="Settings check karo.";return;}
+ const warmup=Math.max(look,atrN,50)+1;
+ let split=candleData.findIndex((x,i)=>i>0&&String(x.date)>="2023-01-01");
+ if(split<0)split=Math.floor(candleData.length*0.7);
+ if(split<=warmup||split>=candleData.length-2){document.getElementById("btStatus").textContent="Date split possible nahi. ISO Date (YYYY-MM-DD) wali CSV/data load karo.";return;}
+ const trainStart=warmup,trainEnd=split-1,testStart=split,testEnd=candleData.length-1;
+ const results=[];
+ for(const mode of ["ATR","MULTI"]){
+   const train=simulateRange(mode,trainStart,trainEnd,cap,risk,atrN,look,sl,rr);
+   const test=simulateRange(mode,testStart,testEnd,cap,risk,atrN,look,sl,rr);
+   results.push({mode,train,test});
+ }
+ const fmt=(x)=>Number.isFinite(x)?x.toFixed(2):"∞";
+ const labels={ATR:"ATR Breakout",MULTI:"EMA + RSI"};
+ document.getElementById("validationResults").innerHTML='<h3>Out-of-Sample Validation</h3><p class="muted">Chronological split | Train: '+candleData[trainStart].date+' to '+candleData[trainEnd].date+' | Test: '+candleData[testStart].date+' to '+candleData[testEnd].date+' | Each period starts with ₹/$ '+cap.toLocaleString()+' capital; test indicators use prior candles only.</p><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;text-align:left"><tr><th>Strategy</th><th>Period</th><th>Return</th><th>Trades</th><th>Win rate</th><th>Profit factor</th><th>Max DD</th></tr>'+results.map(r=>[["Train",r.train],["Test",r.test]].map(([period,x])=>'<tr><td>'+labels[r.mode]+'</td><td>'+period+'</td><td>'+fmt(x.returnPct)+'%</td><td>'+x.trades+'</td><td>'+fmt(x.winRate)+'%</td><td>'+fmt(x.pf)+'</td><td>'+fmt(x.maxDD)+'%</td></tr>').join("")).join("")+'</table></div><p class="muted">Signals: ATR '+results[0].train.signals+' train / '+results[0].test.signals+' test; EMA + RSI '+results[1].train.signals+' train / '+results[1].test.signals+' test. Long-only, no fees/slippage, no short trades. Research result only; not a live-trading recommendation.</p>';
+ document.getElementById("btStatus").textContent="Train/Test validation complete. Compare TEST rows first; no fees/slippage included.";
+}
+
 document.getElementById("runBacktest").addEventListener("click",()=>runLocalBacktest("ATR"));
+document.getElementById("runValidation").addEventListener("click",runTrainTestValidation);
 document.getElementById("runMulti").addEventListener("click",()=>runLocalBacktest("MULTI"));
 document.getElementById("downloadTrades").addEventListener("click",()=>{const cols=["date","side","entry","exit","qty","pnl","reason"];const csv=[cols.join(","),...lastTrades.map(t=>cols.map(c=>String(t[c]??"").replace(/,/g," ")).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ai-quant-trades.csv";a.click();URL.revokeObjectURL(a.href);});
 
