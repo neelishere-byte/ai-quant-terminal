@@ -216,9 +216,9 @@ function runLocalBacktest(mode){
  const cap0=+document.getElementById("btCapital").value,riskPct=+document.getElementById("btRisk").value/100;
  const atrN=+document.getElementById("btAtr").value,look=+document.getElementById("btLookback").value,slMult=+document.getElementById("btSL").value,rr=+document.getElementById("btRR").value;
  if(!(cap0>0&&riskPct>0&&atrN>=2&&look>=2&&slMult>0&&rr>0)){document.getElementById("btStatus").textContent="Settings check karo.";return;}
- const d=candleData, closes=d.map(x=>x.close), trades=[];let equity=cap0,peak=cap0,maxDD=0,pos=null;
+ const d=candleData, closes=d.map(x=>x.close), trades=[];let equity=cap0,peak=cap0,maxDD=0,pos=null;let barsChecked=0,signalsFound=0,atrValid=0;
  for(let i=Math.max(look,atrN,50)+1;i<d.length;i++){
-   const bar=d[i],prev=d[i-1],atr=calcATR(d,atrN,i-1);
+   const bar=d[i],prev=d[i-1],atr=calcATR(d,atrN,i-1);barsChecked++;if(Number.isFinite(atr)&&atr>0)atrValid++;
    if(pos){
      let exit=null,reason="";
      if(bar.low<=pos.sl){exit=pos.sl;reason="Stop Loss";}
@@ -235,7 +235,7 @@ function runLocalBacktest(mode){
        const rsi=losses===0?100:100-100/(1+(gains/14)/(losses/14));
        signal=emaFast>emaSlow&&rsi>=50&&rsi<=70&&rsiUp;
      }
-     if(signal&&atr>0){const entry=bar.open,sl=entry-atr*slMult,riskCash=equity*riskPct,qty=riskCash/(entry-sl);if(qty>0&&Number.isFinite(qty))pos={entry,sl,tp:entry+(entry-sl)*rr,qty,entryIndex:i};}
+     if(signal)signalsFound++;if(signal&&atr>0){const entry=bar.open,sl=entry-atr*slMult,riskCash=equity*riskPct,qty=riskCash/(entry-sl);if(qty>0&&Number.isFinite(qty))pos={entry,sl,tp:entry+(entry-sl)*rr,qty,entryIndex:i};}
    }
  }
  if(pos){const bar=d[d.length-1],pnl=(bar.close-pos.entry)*pos.qty;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit:bar.close,qty:pos.qty,pnl,reason:"End of data"});}
@@ -244,8 +244,8 @@ function runLocalBacktest(mode){
  lastTrades=trades;
  const metrics=[["Final capital",equity.toFixed(2)],["Net return",ret.toFixed(2)+"%"],["Trades",trades.length],["Win rate",wr.toFixed(1)+"%"],["Profit factor",Number.isFinite(pf)?pf.toFixed(2):"∞"],["Max drawdown",maxDD.toFixed(2)+"%"]];
  document.getElementById("btResults").innerHTML=metrics.map(x=>'<div class="card"><small>'+x[0]+'</small><div class="price">'+x[1]+'</div></div>').join("");
- document.getElementById("btStatus").textContent=mode+" backtest complete | "+d.length+" candles | "+d[0].date+" to "+d[d.length-1].date+" | Long-only, no fees/slippage.";
- document.getElementById("btTrades").innerHTML="<p><b>Recent trades</b></p>"+(trades.length?'<div style="overflow:auto"><table style="width:100%;text-align:left;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Reason</th></tr>'+trades.slice(-10).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.entry.toFixed(4)+'</td><td>'+t.exit.toFixed(4)+'</td><td>'+t.pnl.toFixed(2)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table></div>':"<p>No trades in this sample.</p>");
+ document.getElementById("btStatus").textContent=mode+" backtest complete | "+d.length+" candles | "+d[0].date+" to "+d[d.length-1].date+" | Bars checked: "+barsChecked+" | Signals: "+signalsFound+" | Valid ATR: "+atrValid+" | Trades: "+trades.length+" | Long-only, no fees/slippage.";
+ document.getElementById("btTrades").innerHTML="<p><b>Signal Diagnostics</b></p><div class=\"grid\"><div class=\"card\"><small>Bars checked</small><div class=\"price\">"+barsChecked+"</div></div><div class=\"card\"><small>Breakout signals</small><div class=\"price\">"+signalsFound+"</div></div><div class=\"card\"><small>Valid ATR bars</small><div class=\"price\">"+atrValid+"</div></div><div class=\"card\"><small>Executed trades</small><div class=\"price\">"+trades.length+"</div></div></div><p><b>Recent trades</b></p>"+(trades.length?'<div style="overflow:auto"><table style="width:100%;text-align:left;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Reason</th></tr>'+trades.slice(-10).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.entry.toFixed(4)+'</td><td>'+t.exit.toFixed(4)+'</td><td>'+t.pnl.toFixed(2)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table></div>':"<p>No trades in this sample.</p>");
  document.getElementById("downloadTrades").style.display=trades.length?"inline-block":"none";
 }
 document.getElementById("csvFile").addEventListener("change",async e=>{try{const f=e.target.files[0];if(!f)return;candleData=parseCSV(await f.text());document.getElementById("btStatus").textContent="Loaded "+candleData.length+" valid candles. Ab CSV backtest run karo."; }catch(err){candleData=[];document.getElementById("btStatus").textContent=err.message;}});
