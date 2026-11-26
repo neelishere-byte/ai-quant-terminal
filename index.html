@@ -210,6 +210,7 @@ function parseCSV(text){
     .filter(x=>[x.open,x.high,x.low,x.close].every(Number.isFinite)&&x.high>=x.low&&x.open>0&&x.close>0);
 }
 function sma(a,n,end){let s=0;for(let i=end-n+1;i<=end;i++)s+=a[i];return s/n;}
+function calcEMA(a,n,end){const k=2/(n+1);let e=a[0];for(let i=1;i<=end;i++)e=a[i]*k+e*(1-k);return e;}
 function calcATR(d,n,i){let s=0;for(let j=i-n+1;j<=i;j++){const prev=d[j-1]?.close??d[j].close;s+=Math.max(d[j].high-d[j].low,Math.abs(d[j].high-prev),Math.abs(d[j].low-prev));}return s/n;}
 function runLocalBacktest(mode){
  if(!candleData.length){document.getElementById("btStatus").textContent="Pehle historical CSV upload karo.";return;}
@@ -230,7 +231,7 @@ function runLocalBacktest(mode){
      let signal=false;
      if(mode==="ATR") {let top=-Infinity;for(let j=i-look-1;j<i-1;j++)top=Math.max(top,d[j].high);signal=prev.close>top;}
      else {
-       const emaFast=sma(closes,8,i-1),emaSlow=sma(closes,21,i-1),rsiUp=closes[i-1]>closes[i-2];
+       const emaFast=calcEMA(closes,8,i-1),emaSlow=calcEMA(closes,21,i-1),rsiUp=closes[i-1]>closes[i-2];
        let gains=0,losses=0;for(let j=i-14;j<i;j++){const ch=closes[j]-closes[j-1];if(ch>0)gains+=ch;else losses-=ch;}
        const rsi=losses===0?100:100-100/(1+(gains/14)/(losses/14));
        signal=emaFast>emaSlow&&rsi>=50&&rsi<=70&&rsiUp;
@@ -245,7 +246,7 @@ function runLocalBacktest(mode){
  const metrics=[["Final capital",equity.toFixed(2)],["Net return",ret.toFixed(2)+"%"],["Trades",trades.length],["Win rate",wr.toFixed(1)+"%"],["Profit factor",Number.isFinite(pf)?pf.toFixed(2):"∞"],["Max drawdown",maxDD.toFixed(2)+"%"]];
  document.getElementById("btResults").innerHTML=metrics.map(x=>'<div class="card"><small>'+x[0]+'</small><div class="price">'+x[1]+'</div></div>').join("");
  document.getElementById("btStatus").textContent=mode+" backtest complete | "+d.length+" candles | "+d[0].date+" to "+d[d.length-1].date+" | Bars checked: "+barsChecked+" | Signals: "+signalsFound+" | Valid ATR: "+atrValid+" | Trades: "+trades.length+" | Long-only, no fees/slippage.";
- document.getElementById("btTrades").innerHTML="<p><b>Signal Diagnostics</b></p><div class=\"grid\"><div class=\"card\"><small>Bars checked</small><div class=\"price\">"+barsChecked+"</div></div><div class=\"card\"><small>Breakout signals</small><div class=\"price\">"+signalsFound+"</div></div><div class=\"card\"><small>Valid ATR bars</small><div class=\"price\">"+atrValid+"</div></div><div class=\"card\"><small>Executed trades</small><div class=\"price\">"+trades.length+"</div></div></div><p><b>Recent trades</b></p>"+(trades.length?'<div style="overflow:auto"><table style="width:100%;text-align:left;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Reason</th></tr>'+trades.slice(-10).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.entry.toFixed(4)+'</td><td>'+t.exit.toFixed(4)+'</td><td>'+t.pnl.toFixed(2)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table></div>':"<p>No trades in this sample.</p>");
+ document.getElementById("btTrades").innerHTML="<p><b>Signal Diagnostics</b></p><div class=\"grid\"><div class=\"card\"><small>Bars checked</small><div class=\"price\">"+barsChecked+"</div></div><div class=\"card\"><small>"+(mode==="ATR"?"Breakout signals":"EMA + RSI signals")+"</small><div class=\"price\">"+signalsFound+"</div></div><div class=\"card\"><small>Valid ATR bars</small><div class=\"price\">"+atrValid+"</div></div><div class=\"card\"><small>Executed trades</small><div class=\"price\">"+trades.length+"</div></div></div><p><b>Recent trades</b></p>"+(trades.length?'<div style="overflow:auto"><table style="width:100%;text-align:left;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Reason</th></tr>'+trades.slice(-10).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.entry.toFixed(4)+'</td><td>'+t.exit.toFixed(4)+'</td><td>'+t.pnl.toFixed(2)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table></div>':"<p>No trades in this sample.</p>");
  document.getElementById("downloadTrades").style.display=trades.length?"inline-block":"none";
 }
 document.getElementById("csvFile").addEventListener("change",async e=>{try{const f=e.target.files[0];if(!f)return;candleData=parseCSV(await f.text());document.getElementById("btStatus").textContent="Loaded "+candleData.length+" valid candles. Ab CSV backtest run karo."; }catch(err){candleData=[];document.getElementById("btStatus").textContent=err.message;}});
