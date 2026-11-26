@@ -121,6 +121,11 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
   </div>
   <button id="runRobustness" type="button">Run Cost &amp; Robustness Test</button>
   <div id="robustnessResults"></div>
+  <hr style="border-color:#293b57;margin:22px 0">
+  <h3>Walk-Forward Testing Engine</h3>
+  <p class="muted">Four chronological market windows. Each window starts with fresh capital and the selected risk setting. Indicators use available historical candles, while entries are restricted to that window.</p>
+  <button id="runWalkForward" type="button">Run Walk-Forward Test</button>
+  <div id="walkForwardResults"></div>
   <div id="btStatus" class="status">Waiting for a CSV file.</div>
   <div id="btResults" class="grid"></div>
   <div id="btTrades"></div>
@@ -344,6 +349,46 @@ function runRobustnessTests(){
 
 document.getElementById("runValidation").addEventListener("click",runTrainTestValidation);
 document.getElementById("runRobustness").addEventListener("click",runRobustnessTests);
+
+function runWalkForwardTests(){
+ if(candleData.length<500){document.getElementById("btStatus").textContent="Walk-forward test ke liye kam se kam 500 candles load karo.";return;}
+ const cap=+document.getElementById("btCapital").value,risk=+document.getElementById("btRisk").value/100;
+ const atrN=+document.getElementById("btAtr").value,look=+document.getElementById("btLookback").value,sl=+document.getElementById("btSL").value,rr=+document.getElementById("btRR").value;
+ if(!(cap>0&&risk>0&&atrN>=2&&look>=2&&sl>0&&rr>0)){document.getElementById("btStatus").textContent="Settings check karo.";return;}
+ const warmup=Math.max(look,atrN,50)+1;
+ const windows=[
+  {name:"2017–2020",from:"2017-01-01",to:"2020-12-31"},
+  {name:"2021–2022",from:"2021-01-01",to:"2022-12-31"},
+  {name:"2023–2024",from:"2023-01-01",to:"2024-12-31"},
+  {name:"2025–2026",from:"2025-01-01",to:"2026-12-31"}
+ ];
+ const rows=[];
+ for(const w of windows){
+   let a=candleData.findIndex(x=>String(x.date)>=w.from);
+   if(a<0)continue;
+   let b=-1;for(let i=a;i<candleData.length;i++){if(String(candleData[i].date)<=w.to)b=i;else break;}
+   if(b-a<20)continue;
+   a=Math.max(a,warmup);
+   if(b-a<20)continue;
+   for(const mode of ["ATR","MULTI"]){
+     const r=simulateRange(mode,a,b,cap,risk,atrN,look,sl,rr,0);
+     rows.push({window:w.name,mode,r});
+   }
+ }
+ if(!rows.length){document.getElementById("btStatus").textContent="Selected data mein required date windows available nahi hain.";return;}
+ const fmt=x=>Number.isFinite(x)?x.toFixed(2):"∞",label=m=>m==="ATR"?"ATR Breakout":"EMA + RSI";
+ const table=rows.map(x=>'<tr><td>'+x.window+'</td><td>'+label(x.mode)+'</td><td>'+fmt(x.r.returnPct)+'%</td><td>'+x.r.trades+'</td><td>'+fmt(x.r.winRate)+'%</td><td>'+fmt(x.r.pf)+'</td><td>'+fmt(x.r.maxDD)+'%</td><td>'+fmt(x.r.capital)+'</td></tr>').join("");
+ const summaries=["ATR","MULTI"].map(mode=>{
+   const rr=rows.filter(x=>x.mode===mode).map(x=>x.r);
+   const profitable=rr.filter(x=>x.returnPct>0).length;
+   const avg=rr.reduce((z,x)=>z+x.returnPct,0)/rr.length;
+   return '<div class="card"><b>'+label(mode)+'</b><p>Profitable windows: '+profitable+'/'+rr.length+'</p><p>Average window return: '+fmt(avg)+'%</p><p>Total trades across windows: '+rr.reduce((z,x)=>z+x.trades,0)+'</p></div>';
+ }).join("");
+ document.getElementById("walkForwardResults").innerHTML='<p><b>Walk-Forward Results</b></p><p class="muted">Initial capital per window: '+cap.toLocaleString()+' | Risk per trade: '+(risk*100).toFixed(2)+'% | No transaction costs or slippage in this run.</p><div class="grid">'+summaries+'</div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;text-align:left;min-width:780px"><tr><th>Window</th><th>Strategy</th><th>Return</th><th>Trades</th><th>Win rate</th><th>Profit factor</th><th>Max DD</th><th>Final capital</th></tr>'+table+'</table></div><p class="muted">Interpretation: compare consistency across windows, not just average return. Periods with few trades are weak evidence. This is a chronological segment test, not a rolling re-optimization walk-forward; parameters are held fixed across all windows. Long-only research simulation, not live-trading advice.</p>';
+ document.getElementById("btStatus").textContent="Walk-forward testing complete across "+rows.length+" strategy-window results.";
+}
+
+document.getElementById("runWalkForward").addEventListener("click",runWalkForwardTests);
 document.getElementById("runMulti").addEventListener("click",()=>runLocalBacktest("MULTI"));
 document.getElementById("downloadTrades").addEventListener("click",()=>{const cols=["date","side","entry","exit","qty","pnl","reason"];const csv=[cols.join(","),...lastTrades.map(t=>cols.map(c=>String(t[c]??"").replace(/,/g," ")).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ai-quant-trades.csv";a.click();URL.revokeObjectURL(a.href);});
 
