@@ -228,7 +228,7 @@ function runLocalBacktest(mode){
    }
    if(!pos&&i<d.length-1){
      let signal=false;
-     if(mode==="ATR") {let top=-Infinity;for(let j=i-look;j<i;j++)top=Math.max(top,d[j].high);signal=prev.close>top;}
+     if(mode==="ATR") {let top=-Infinity;for(let j=i-look-1;j<i-1;j++)top=Math.max(top,d[j].high);signal=prev.close>top;}
      else {
        const emaFast=sma(closes,8,i-1),emaSlow=sma(closes,21,i-1),rsiUp=closes[i-1]>closes[i-2];
        let gains=0,losses=0;for(let j=i-14;j<i;j++){const ch=closes[j]-closes[j-1];if(ch>0)gains+=ch;else losses-=ch;}
