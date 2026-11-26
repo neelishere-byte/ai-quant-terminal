@@ -97,7 +97,8 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
 <h2>Strategy Lab — Historical CSV Backtest</h2>
 <div class="card">
   <p class="muted">Upload OHLCV candles (CSV columns: Date, Open, High, Low, Close; Volume optional). This runs locally in your browser. It does not use live prices or place orders.</p>
-  <label>Historical market data CSV</label>
+  <label>Automatic data source</label><div class="row"><select id="autoSymbol"><option value="GC=F">Gold Futures (GC=F)</option><option value="XAUUSD=X">Gold Spot (XAUUSD=X)</option><option value="SI=F">Silver Futures (SI=F)</option><option value="CL=F">Crude Oil Futures (CL=F)</option><option value="^NSEI">NIFTY 50 (^NSEI)</option><option value="BTC-USD">Bitcoin (BTC-USD)</option></select><button id="loadAutoData" type="button">Fetch 10 Years Data Automatically</button></div><p class="muted">Yahoo Finance historical daily candles. CSV upload is optional fallback.</p>
+<label>Historical market data CSV</label>
   <input id="csvFile" type="file" accept=".csv,text/csv">
   <div class="grid">
     <div><label>Starting capital</label><input id="btCapital" type="number" value="10000" min="100"></div>
@@ -251,6 +252,30 @@ document.getElementById("csvFile").addEventListener("change",async e=>{try{const
 document.getElementById("runBacktest").addEventListener("click",()=>runLocalBacktest("ATR"));
 document.getElementById("runMulti").addEventListener("click",()=>runLocalBacktest("MULTI"));
 document.getElementById("downloadTrades").addEventListener("click",()=>{const cols=["date","side","entry","exit","qty","pnl","reason"];const csv=[cols.join(","),...lastTrades.map(t=>cols.map(c=>String(t[c]??"").replace(/,/g," ")).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ai-quant-trades.csv";a.click();URL.revokeObjectURL(a.href);});
+
+
+async function fetchYahooHistory(){
+ const symbol=document.getElementById("autoSymbol").value, status=document.getElementById("btStatus"), btn=document.getElementById("loadAutoData");
+ btn.disabled=true;btn.textContent="Fetching...";
+ status.textContent="Yahoo Finance se 10 years daily candles fetch ho rahe hain...";
+ try{
+  const url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(symbol)+"?range=10y&interval=1d&events=history";
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok) throw new Error("Provider response "+response.status);
+  const json=await response.json(), result=json.chart?.result?.[0];
+  if(!result?.timestamp||!result.indicators?.quote?.[0]) throw new Error("Historical data unavailable");
+  const q=result.indicators.quote[0], rows=[];
+  for(let i=0;i<result.timestamp.length;i++){
+   const v=[q.open[i],q.high[i],q.low[i],q.close[i]];
+   if(v.every(x=>x!==null&&Number.isFinite(x))) rows.push({date:new Date(result.timestamp[i]*1000).toISOString().slice(0,10),open:v[0],high:v[1],low:v[2],close:v[3]});
+  }
+  if(rows.length<100) throw new Error("Only "+rows.length+" valid candles returned");
+  candleData=rows;
+  status.textContent="AUTO DATA LOADED: "+symbol+" | "+rows.length+" daily candles | "+rows[0].date+" to "+rows[rows.length-1].date+". Ab backtest chalao.";
+ }catch(err){status.textContent="Auto fetch failed: "+err.message+". Agar browser CORS block kare to CSV fallback use kar sakte ho.";}
+ finally{btn.disabled=false;btn.textContent="Fetch 10 Years Data Automatically";}
+}
+document.getElementById("loadAutoData").addEventListener("click",fetchYahooHistory);
 
 </script>
 </body>
