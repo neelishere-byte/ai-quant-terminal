@@ -112,6 +112,15 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
   <button id="runMulti" type="button">Run EMA + RSI Backtest</button>
   <button id="runValidation" type="button">Run Train / Test Validation (2016–2022 vs 2023–2026)</button>
   <div id="validationResults"></div>
+  <hr style="border-color:#293b57;margin:22px 0">
+  <h3>Cost &amp; Robustness Testing Engine</h3>
+  <p class="muted">Test period par dono strategies ko 4 transaction-cost levels aur 3 risk levels par compare karein. Cost ko entry aur exit dono taraf percentage of notional maana gaya hai.</p>
+  <div class="grid">
+    <div><label>Cost scenarios</label><div class="muted">0%, 0.05%, 0.10%, 0.20% per side</div></div>
+    <div><label>Risk scenarios</label><div class="muted">0.25%, 0.50%, 1.00% per trade</div></div>
+  </div>
+  <button id="runRobustness" type="button">Run Cost &amp; Robustness Test</button>
+  <div id="robustnessResults"></div>
   <div id="btStatus" class="status">Waiting for a CSV file.</div>
   <div id="btResults" class="grid"></div>
   <div id="btTrades"></div>
@@ -253,7 +262,7 @@ function runLocalBacktest(mode){
 }
 document.getElementById("csvFile").addEventListener("change",async e=>{try{const f=e.target.files[0];if(!f)return;candleData=parseCSV(await f.text());document.getElementById("btStatus").textContent="Loaded "+candleData.length+" valid candles. Ab CSV backtest run karo."; }catch(err){candleData=[];document.getElementById("btStatus").textContent=err.message;}});
 
-function simulateRange(mode,startIndex,endIndex,cap0,riskPct,atrN,look,slMult,rr){
+function simulateRange(mode,startIndex,endIndex,cap0,riskPct,atrN,look,slMult,rr,costRate=0){
  const d=candleData,closes=d.map(x=>x.close),trades=[];
  let equity=cap0,peak=cap0,maxDD=0,pos=null,bars=0,signals=0;
  const warmup=Math.max(look,atrN,50)+1;
@@ -265,7 +274,7 @@ function simulateRange(mode,startIndex,endIndex,cap0,riskPct,atrN,look,slMult,rr
      if(bar.low<=pos.sl){exit=pos.sl;reason="Stop Loss";}
      else if(bar.high>=pos.tp){exit=pos.tp;reason="Take Profit";}
      else if(i-pos.entryIndex>=100){exit=bar.close;reason="Time Exit";}
-     if(exit!==null){const pnl=(exit-pos.entry)*pos.qty;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit,qty:pos.qty,pnl,reason});pos=null;peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+     if(exit!==null){const gross=(exit-pos.entry)*pos.qty;const fees=costRate*pos.qty*(pos.entry+exit);const pnl=gross-fees;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit,qty:pos.qty,pnl,reason});pos=null;peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
    }
    if(i>=startIndex&&!pos&&i<endIndex){
      let signal=false;
@@ -283,7 +292,7 @@ function simulateRange(mode,startIndex,endIndex,cap0,riskPct,atrN,look,slMult,rr
      }
    }
  }
- if(pos){const bar=d[endIndex],pnl=(bar.close-pos.entry)*pos.qty;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit:bar.close,qty:pos.qty,pnl,reason:"Period End"});peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+ if(pos){const bar=d[endIndex],gross=(bar.close-pos.entry)*pos.qty,fees=costRate*pos.qty*(pos.entry+bar.close),pnl=gross-fees;equity+=pnl;trades.push({date:bar.date,side:"LONG",entry:pos.entry,exit:bar.close,qty:pos.qty,pnl,reason:"Period End"});peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
  const wins=trades.filter(t=>t.pnl>0),losers=trades.filter(t=>t.pnl<=0);
  const gw=wins.reduce((s,t)=>s+t.pnl,0),gl=-losers.reduce((s,t)=>s+t.pnl,0);
  return {capital:equity,returnPct:(equity/cap0-1)*100,trades:trades.length,winRate:trades.length?wins.length/trades.length*100:0,pf:gl?gw/gl:(gw?Infinity:0),maxDD,signals,bars,start:d[startIndex].date,end:d[endIndex].date};
@@ -311,7 +320,30 @@ function runTrainTestValidation(){
 }
 
 document.getElementById("runBacktest").addEventListener("click",()=>runLocalBacktest("ATR"));
+
+function runRobustnessTests(){
+ if(candleData.length<300){document.getElementById("btStatus").textContent="Robustness test ke liye kam se kam 300 candles load karo.";return;}
+ const cap=+document.getElementById("btCapital").value;
+ const atrN=+document.getElementById("btAtr").value,look=+document.getElementById("btLookback").value,sl=+document.getElementById("btSL").value,rr=+document.getElementById("btRR").value;
+ if(!(cap>0&&atrN>=2&&look>=2&&sl>0&&rr>0)){document.getElementById("btStatus").textContent="Settings check karo.";return;}
+ const warmup=Math.max(look,atrN,50)+1;
+ let split=candleData.findIndex((x,i)=>i>0&&String(x.date)>="2023-01-01");
+ if(split<0)split=Math.floor(candleData.length*0.7);
+ if(split<=warmup||split>=candleData.length-2){document.getElementById("btStatus").textContent="Date split possible nahi. ISO Date (YYYY-MM-DD) data load karo.";return;}
+ const costs=[0,0.0005,0.001,0.002],risks=[0.25,0.5,1.0],modes=["ATR","MULTI"],rows=[];
+ for(const mode of modes)for(const riskPct of risks)for(const cost of costs){
+   const r=simulateRange(mode,split,candleData.length-1,cap,riskPct/100,atrN,look,sl,rr,cost);
+   rows.push({mode,riskPct,cost,r});
+ }
+ const fmt=x=>Number.isFinite(x)?x.toFixed(2):"∞";
+ const label=m=>m==="ATR"?"ATR Breakout":"EMA + RSI";
+ const body=rows.map(x=>'<tr><td>'+label(x.mode)+'</td><td>'+x.riskPct.toFixed(2)+'%</td><td>'+(x.cost*100).toFixed(2)+'%</td><td>'+fmt(x.r.returnPct)+'%</td><td>'+x.r.trades+'</td><td>'+fmt(x.r.winRate)+'%</td><td>'+fmt(x.r.pf)+'</td><td>'+fmt(x.r.maxDD)+'%</td><td>'+fmt(x.r.capital)+'</td></tr>').join("");
+ document.getElementById("robustnessResults").innerHTML='<p><b>Robustness Results — Test / Out-of-Sample Period</b></p><p class="muted">Test: '+candleData[split].date+' to '+candleData[candleData.length-1].date+' | Initial capital: '+cap.toLocaleString()+' | 24 scenario combinations. Transaction cost applied on entry and exit notional.</p><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;text-align:left;min-width:850px"><tr><th>Strategy</th><th>Risk / trade</th><th>Cost / side</th><th>Return</th><th>Trades</th><th>Win rate</th><th>Profit factor</th><th>Max DD</th><th>Final capital</th></tr>'+body+'</table></div><p class="muted">Important: cost is a simplified percentage model, not actual broker fees, spread, slippage, funding, taxes or exchange charges. Position size is calculated from pre-cost stop risk, so realized loss can exceed the selected risk after costs. Long-only simulation; research use only.</p>';
+ document.getElementById("btStatus").textContent="Cost & Robustness test complete: 24 combinations across the out-of-sample test period.";
+}
+
 document.getElementById("runValidation").addEventListener("click",runTrainTestValidation);
+document.getElementById("runRobustness").addEventListener("click",runRobustnessTests);
 document.getElementById("runMulti").addEventListener("click",()=>runLocalBacktest("MULTI"));
 document.getElementById("downloadTrades").addEventListener("click",()=>{const cols=["date","side","entry","exit","qty","pnl","reason"];const csv=[cols.join(","),...lastTrades.map(t=>cols.map(c=>String(t[c]??"").replace(/,/g," ")).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ai-quant-trades.csv";a.click();URL.revokeObjectURL(a.href);});
 
