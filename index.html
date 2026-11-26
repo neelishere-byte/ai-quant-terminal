@@ -126,6 +126,11 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
   <p class="muted">Four chronological market windows. Each window starts with fresh capital and the selected risk setting. Indicators use available historical candles, while entries are restricted to that window.</p>
   <button id="runWalkForward" type="button">Run Walk-Forward Test</button>
   <div id="walkForwardResults"></div>
+  <hr style="border-color:#293b57;margin:22px 0">
+  <h3>Rolling Walk-Forward Optimization Engine</h3>
+  <p class="muted">Har test window se pehle sirf purane training data par parameter search hota hai. Selected parameters ko agle unseen window par test kiya jata hai. Expanding training window; test windows overlap nahi karte.</p>
+  <button id="runRollingWF" type="button">Run Rolling Walk-Forward Optimization</button>
+  <div id="rollingWFResults"></div>
   <div id="btStatus" class="status">Waiting for a CSV file.</div>
   <div id="btResults" class="grid"></div>
   <div id="btTrades"></div>
@@ -416,6 +421,84 @@ async function fetchYahooHistory(){
  }finally{btn.disabled=false;btn.textContent="Load 10 Years Data Automatically";}
 }
 document.getElementById("loadAutoData").addEventListener("click",fetchYahooHistory);
+
+
+function simulateWithConfig(mode,startIndex,endIndex,cap0,riskPct,cfg){
+ const d=candleData,closes=d.map(x=>x.close),trades=[];
+ let equity=cap0,peak=cap0,maxDD=0,pos=null;
+ const warmup=Math.max(cfg.look,cfg.atrN,cfg.slow||0,50)+1;
+ for(let i=warmup;i<=endIndex;i++){
+  const bar=d[i],prev=d[i-1],atr=calcATR(d,cfg.atrN,i-1);
+  if(i>=startIndex&&pos){
+   let exit=null,reason="";
+   if(bar.low<=pos.sl){exit=pos.sl;reason="Stop Loss";}
+   else if(bar.high>=pos.tp){exit=pos.tp;reason="Take Profit";}
+   else if(i-pos.entryIndex>=100){exit=bar.close;reason="Time Exit";}
+   if(exit!==null){equity+=(exit-pos.entry)*pos.qty;trades.push({pnl:(exit-pos.entry)*pos.qty,reason});pos=null;peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+  }
+  if(i>=startIndex&&!pos&&i<endIndex){
+   let signal=false;
+   if(mode==="ATR"){
+    let top=-Infinity;for(let j=i-cfg.look-1;j<i-1;j++)top=Math.max(top,d[j].high);
+    signal=prev.close>top;
+   }else{
+    const fast=calcEMA(closes,cfg.fast,i-1),slow=calcEMA(closes,cfg.slow,i-1);
+    let gains=0,losses=0;for(let j=i-14;j<i;j++){const ch=closes[j]-closes[j-1];if(ch>0)gains+=ch;else losses-=ch;}
+    const rsi=losses===0?100:100-100/(1+gains/Math.max(losses,1e-12));
+    signal=fast>slow&&rsi>=cfg.rsiLow&&rsi<=cfg.rsiHigh&&closes[i-1]>closes[i-2];
+   }
+   if(signal&&Number.isFinite(atr)&&atr>0){
+    const entry=bar.open,sl=entry-atr*cfg.sl,riskCash=equity*riskPct,qty=riskCash/(entry-sl);
+    if(qty>0&&Number.isFinite(qty))pos={entry,sl,tp:entry+(entry-sl)*cfg.rr,qty,entryIndex:i};
+   }
+  }
+ }
+ if(pos){const bar=d[endIndex],pnl=(bar.close-pos.entry)*pos.qty;equity+=pnl;trades.push({pnl,reason:"Period End"});peak=Math.max(peak,equity);maxDD=Math.min(maxDD,(equity/peak-1)*100);}
+ const wins=trades.filter(t=>t.pnl>0),losses=trades.filter(t=>t.pnl<=0);
+ const gw=wins.reduce((s,t)=>s+t.pnl,0),gl=-losses.reduce((s,t)=>s+t.pnl,0);
+ const pf=gl?gw/gl:(gw?Infinity:0);
+ return {capital:equity,returnPct:(equity/cap0-1)*100,trades:trades.length,winRate:trades.length?wins.length/trades.length*100:0,pf,maxDD};
+}
+function runRollingWalkForward(){
+ if(candleData.length<900){document.getElementById("btStatus").textContent="Rolling optimization ke liye kam se kam 900 daily candles chahiye.";return;}
+ const cap=+document.getElementById("btCapital").value,risk=+document.getElementById("btRisk").value/100;
+ if(!(cap>0&&risk>0)){document.getElementById("btStatus").textContent="Capital aur risk settings check karein.";return;}
+ const warmup=55, dates=candleData.map(x=>String(x.date));
+ const periods=[{name:"2021–2022",from:"2021-01-01",to:"2022-12-31"},{name:"2023–2024",from:"2023-01-01",to:"2024-12-31"},{name:"2025–2026",from:"2025-01-01",to:"2026-12-31"}];
+ const configs={ATR:[],MULTI:[]};
+ for(const atrN of [14,20])for(const look of [20,30,40])for(const sl of [2,3])for(const rr of [2,3,4])configs.ATR.push({atrN,look,sl,rr});
+ for(const pair of [[8,21],[12,26]])for(const rsiLow of [50,55])for(const rsiHigh of [70,75])configs.MULTI.push({atrN:20,look:40,sl:3,rr:4,fast:pair[0],slow:pair[1],rsiLow,rsiHigh});
+ const rows=[];
+ for(const p of periods){
+  const testStart=dates.findIndex(x=>x>=p.from);if(testStart<0)continue;
+  let testEnd=testStart;while(testEnd+1<dates.length&&dates[testEnd+1]<=p.to)testEnd++;
+  const trainStart=warmup,trainEnd=testStart-1;
+  if(trainEnd-trainStart<250||testEnd-testStart<20)continue;
+  for(const mode of ["ATR","MULTI"]){
+   let best=null,bestScore=-Infinity;
+   for(const cfg of configs[mode]){
+    const r=simulateWithConfig(mode,trainStart,trainEnd,cap,risk,cfg);
+    if(r.trades<3||!Number.isFinite(r.returnPct)||r.pf<0.8)continue;
+    const score=r.returnPct-0.5*Math.abs(r.maxDD)+Math.min(r.pf,4)*0.15;
+    if(score>bestScore){bestScore=score;best={cfg,train:r,score};}
+   }
+   if(!best){rows.push({period:p.name,mode,best:null,test:null,trainStart:dates[trainStart],trainEnd:dates[trainEnd],testStart:dates[testStart],testEnd:dates[testEnd]});continue;}
+   const test=simulateWithConfig(mode,testStart,testEnd,cap,risk,best.cfg);
+   rows.push({period:p.name,mode,best,test,trainStart:dates[trainStart],trainEnd:dates[trainEnd],testStart:dates[testStart],testEnd:dates[testEnd]});
+  }
+ }
+ const fmt=x=>Number.isFinite(x)?x.toFixed(2):"∞";
+ const label=m=>m==="ATR"?"ATR Breakout":"EMA + RSI";
+ const cfgText=(m,c)=>m==="ATR"?"ATR "+c.atrN+", Lookback "+c.look+", SL "+c.sl+"x, TP "+c.rr+"R":"EMA "+c.fast+"/"+c.slow+", RSI "+c.rsiLow+"–"+c.rsiHigh+", ATR SL "+c.sl+"x";
+ const body=rows.map(x=>{
+  if(!x.best)return '<tr><td>'+x.period+'</td><td>'+label(x.mode)+'</td><td colspan="6">No eligible training configuration (minimum 3 trades / PF 0.8)</td></tr>';
+  return '<tr><td>'+x.period+'</td><td>'+label(x.mode)+'</td><td>'+cfgText(x.mode,x.best.cfg)+'</td><td>'+fmt(x.best.train.returnPct)+'%</td><td>'+fmt(x.test.returnPct)+'%</td><td>'+x.test.trades+'</td><td>'+fmt(x.test.pf)+'</td><td>'+fmt(x.test.maxDD)+'%</td></tr>';
+ }).join("");
+ const count=rows.filter(x=>x.best).length;
+ document.getElementById("rollingWFResults").innerHTML='<p><b>Rolling Optimization Results</b></p><p class="muted">Expanding train starts at '+dates[warmup]+'. Each test period uses parameters selected only from data before that period. Fresh capital per train/test simulation: '+cap.toLocaleString()+' | Risk: '+(risk*100).toFixed(2)+'% | No costs/slippage.</p><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;text-align:left;min-width:950px"><tr><th>Test window</th><th>Strategy</th><th>Selected parameters</th><th>Train return</th><th>Test return</th><th>Test trades</th><th>Test PF</th><th>Test DD</th></tr>'+body+'</table></div><p class="muted">Eligible configurations: ATR '+configs.ATR.length+'; EMA + RSI '+configs.MULTI.length+'. Selection score = training return − 0.5 × absolute training drawdown + capped PF bonus; requires at least 3 training trades and PF ≥ 0.8. This is a small parameter grid, not proof of future performance. Test periods are chronological and non-overlapping. Long-only research simulation; no fees, spread, slippage or funding.</p>';
+ document.getElementById("btStatus").textContent="Rolling walk-forward optimization complete: "+count+" strategy/window configurations selected and tested.";
+}
+document.getElementById("runRollingWF").addEventListener("click",runRollingWalkForward);
 
 </script>
 </body>
