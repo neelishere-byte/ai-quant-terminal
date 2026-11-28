@@ -602,7 +602,23 @@ function pBlocked(){
  if(m>0&&dd>=m)return "Maximum drawdown limit reached. New entries blocked.";
  return "";
 }
+function paperRiskCheck(side,qty,ref,sl){
+ const riskPct=pnum("paperRisk"),c=paperCosts(),dir=side==="BUY"?1:-1;
+ if(!(Number.isFinite(riskPct)&&riskPct>=0.1&&riskPct<=5))return {ok:false,message:"Risk per trade 0.1% se 5% ke beech rakhein."};
+ if(!(Number.isFinite(sl)&&sl>0))return {ok:false,message:"Har Demo Order ke liye Stop Loss zaroori hai."};
+ if(!(Number.isFinite(ref)&&ref>0)||(side==="BUY"?sl>=ref:sl<=ref))return {ok:false,message:"Stop Loss side aur entry price ke hisaab se valid nahi hai."};
+ const entry=ref*(1+dir*(c.spread/2+c.slip)),stopExit=sl*(1-dir*(c.spread/2+c.slip));
+ if(!(entry>0&&stopExit>0))return {ok:false,message:"Spread/slippage settings ke saath valid stop price calculate nahi hua."};
+ const riskPerUnit=dir*(entry-stopExit)+entry*c.fee+stopExit*c.fee;
+ if(!(riskPerUnit>0&&Number.isFinite(riskPerUnit)))return {ok:false,message:"Estimated per-unit risk valid nahi hai."};
+ const budget=paper.balance*riskPct/100,maxQty=Math.floor(Math.min(budget/riskPerUnit,paper.balance/entry)*10000)/10000;
+ const estimatedLoss=qty*riskPerUnit;
+ if(!(qty>0&&Number.isFinite(qty)))return {ok:false,message:"Quantity valid honi chahiye."};
+ if(qty>maxQty+1e-8)return {ok:false,message:"Order blocked: quantity risk limit se zyada hai. Max allowed approx "+maxQty.toFixed(4)+" units; estimated SL loss $"+money(estimatedLoss)+" vs budget $"+money(budget)+"."};
+ return {ok:true,maxQty,budget,estimatedLoss};
+}
 function paperOpen(side,qty,ref,sl,tp){
+ const riskCheck=paperRiskCheck(side,qty,ref,sl);if(!riskCheck.ok)throw new Error(riskCheck.message);
  const c=paperCosts(),direction=side==="BUY"?1:-1;
  const entry=ref*(1+direction*(c.spread/2+c.slip));
  const fee=Math.abs(entry*qty)*c.fee;
@@ -630,8 +646,12 @@ document.getElementById("paperSubmit").addEventListener("click",()=>{
   if(key===paperLastSubmitKey&&now-paperLastSubmitAt<10000)throw new Error("Duplicate order blocked: same order 10 seconds mein dobara nahi lagega.");
   if(type==="MARKET"&&paper.positions.some(p=>p.side===side&&p.qty===qty&&p.date===pdate()))throw new Error("Same-side same-quantity position already open today. Duplicate blocked.");
   const block=pBlocked();if(block)throw new Error(block);
+  if(sl===null)throw new Error("Har Demo Order ke liye Stop Loss zaroori hai.");
   if(sl!==null&&((side==="BUY"&&sl>=px)||(side==="SELL"&&sl<=px)))throw new Error("BUY SL current price se neeche aur SELL SL upar rakhein.");
   if(tp!==null&&((side==="BUY"&&tp<=px)||(side==="SELL"&&tp>=px)))throw new Error("BUY TP current price se upar aur SELL TP neeche rakhein.");
+  const riskRef=type==="LIMIT"?pnum("paperLimit"):px;
+  if(type==="LIMIT"&&!(riskRef>0))throw new Error("Valid limit price enter karein.");
+  const riskCheck=paperRiskCheck(side,qty,riskRef,sl);if(!riskCheck.ok)throw new Error(riskCheck.message);
   if(type==="LIMIT"){
    const limit=pnum("paperLimit");if(!(limit>0))throw new Error("Valid limit price enter karein.");
    if(paper.orders.some(o=>o.side===side&&o.qty===qty&&o.limit===limit))throw new Error("Same pending limit order already exists.");
@@ -662,10 +682,15 @@ window.paperSaveStops=function(id){
 };
 document.getElementById("paperCheck").addEventListener("click",()=>{
  if(!candleData.length){document.getElementById("paperStatus").textContent="Historical candles load karein.";return;}
- const b=candleData[candleData.length-1];let fills=0,exits=0,skipped=0;
+ const b=candleData[candleData.length-1];let fills=0,exits=0,skipped=0,riskRejected=0;
  paper.orders=paper.orders.filter(o=>{
   if(String(o.createdDate)>=String(b.date)){skipped++;return true;}
-  if(b.low<=o.limit&&b.high>=o.limit){paperOpen(o.side,o.qty,o.limit,o.sl,o.tp);fills++;return false;}
+  if(b.low<=o.limit&&b.high>=o.limit){
+   const riskCheck=paperRiskCheck(o.side,o.qty,o.limit,o.sl);
+   if(!riskCheck.ok){riskRejected++;return false;}
+   try{paperOpen(o.side,o.qty,o.limit,o.sl,o.tp);fills++;return false;}
+   catch(e){riskRejected++;return false;}
+  }
   return true;
  });
  paper.positions.slice().forEach(p=>{
@@ -688,7 +713,7 @@ document.getElementById("paperCheck").addEventListener("click",()=>{
   }
  });
  paper.peak=Math.max(paper.peak,pEquity());savePaper();pRender();
- document.getElementById("paperStatus").textContent="Checked candle "+pdate()+". Limit fills: "+fills+" | SL/TP exits: "+exits+" | Same-candle entries skipped: "+skipped+". SL is assumed first if both SL and TP fall inside one daily candle; gap fills use candle open.";
+ document.getElementById("paperStatus").textContent="Checked candle "+pdate()+". Limit fills: "+fills+" | Risk-rejected pending orders removed: "+riskRejected+" | SL/TP exits: "+exits+" | Same-candle entries skipped: "+skipped+". SL is assumed first if both SL and TP fall inside one daily candle; gap fills use candle open.";
 });
 document.getElementById("paperReset").addEventListener("click",()=>{
  if(!confirm("Reset virtual account, open positions and history?"))return;
