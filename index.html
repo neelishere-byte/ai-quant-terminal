@@ -159,6 +159,17 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
  <div id="paperStats" class="grid"></div>
  <h3>Open Positions / Pending Orders</h3><div id="paperOpen" style="overflow:auto"></div>
  <h3>Closed Trade History</h3><div id="paperHistory" style="overflow:auto"></div>
+ <h3>Risk Management Audit Simulator — Daily Loss Limit (No Account Impact)</h3>
+ <p class="muted">Independent hypothetical test. Enter realized daily P&amp;L for up to three closed trades. The simulator checks whether a new entry is blocked once the configured daily loss threshold is reached. It does not change the Demo Account.</p>
+ <div class="grid">
+  <div><label>Audit starting balance ($)</label><input id="riskAuditBalance" type="number" value="10000" min="1" step="100"></div>
+  <div><label>Daily loss limit (%)</label><input id="riskAuditLimit" type="number" value="2" min="0.1" max="100" step="0.1"></div>
+  <div><label>Trade 1 realized P&amp;L ($)</label><input id="riskAuditTrade1" type="number" value="-80" step="1"></div>
+  <div><label>Trade 2 realized P&amp;L ($)</label><input id="riskAuditTrade2" type="number" value="-70" step="1"></div>
+  <div><label>Trade 3 realized P&amp;L ($)</label><input id="riskAuditTrade3" type="number" value="-50" step="1"></div>
+ </div>
+ <div class="row"><button id="runRiskAudit" type="button">Run Daily Loss Limit Audit</button><button id="resetRiskAudit" type="button">Reset Audit Values</button></div>
+ <div id="riskAuditResult" class="status" aria-live="polite">Default test: -$80, -$70, -$50 = -$200. A new entry should be blocked at the 2% limit.</div>
  <h3>SL / TP Testing Simulator — No Account Impact</h3>
  <p class="muted">Hypothetical OHLC test only. It does not open or close demo positions or change balance/history.</p>
  <div class="grid">
@@ -675,6 +686,30 @@ document.getElementById("runSLTest").addEventListener("click",()=>{
  else{if(isStop&&o>level)fill=o;if(!isStop&&o<level)fill=o;}
  const move=side==="BUY"?fill-entry:entry-fill,both=stop&&target;
  out.innerHTML="<b>Result: "+(isStop?"STOP LOSS HIT":"TAKE PROFIT HIT")+"</b><br>Simulated reference exit: $"+money(fill)+"<br>Price P&amp;L per unit before costs: $"+money(move)+"<br>"+(both?"Both levels candle range mein the; conservative rule ke mutabik SL first assume kiya. ":"")+(fill!==level?"Gap ke karan candle open fill hua. ":"Level fill used. ")+"Demo balance, positions aur history unchanged.";
+});
+document.getElementById("runRiskAudit").addEventListener("click",()=>{
+ const val=id=>Number(document.getElementById(id).value);
+ const start=val("riskAuditBalance"),limit=val("riskAuditLimit")/100;
+ const trades=[val("riskAuditTrade1"),val("riskAuditTrade2"),val("riskAuditTrade3")];
+ const out=document.getElementById("riskAuditResult");
+ if(!(Number.isFinite(start)&&start>0&&Number.isFinite(limit)&&limit>0&&limit<=1&&trades.every(Number.isFinite))){
+  out.textContent="Valid balance, limit (0.1%–100%) aur trade P&L values enter karein.";return;
+ }
+ const threshold=start*limit;
+ let dailyNet=0,blockedAt=0;
+ const rows=trades.map((p,i)=>{
+  dailyNet+=p;
+  const blocked=dailyNet<=-threshold;
+  if(blocked&&!blockedAt)blockedAt=i+1;
+  return "Trade "+(i+1)+": P&L $"+money(p)+" | Daily net $"+money(dailyNet)+" | "+(blocked?"NEW ENTRY BLOCKED":"Entry allowed");
+ });
+ const blocked=dailyNet<=-threshold;
+ out.innerHTML="<b>Audit "+(blocked?"PASSED":"NOT TRIGGERED")+"</b><br>Loss threshold: $"+money(threshold)+" ("+(limit*100).toFixed(2)+"% of $"+money(start)+")<br>"+rows.join("<br>")+"<br><b>New order after these trades: "+(blocked?"BLOCKED":"NOT BLOCKED")+"</b><br>"+(blocked?"Limit first reached after trade "+blockedAt+".":"Loss limit was not reached; try losses totaling at least $"+money(threshold)+".")+"<br>Independent test only — Demo Account unchanged.";
+});
+document.getElementById("resetRiskAudit").addEventListener("click",()=>{
+ const vals={riskAuditBalance:"10000",riskAuditLimit:"2",riskAuditTrade1:"-80",riskAuditTrade2:"-70",riskAuditTrade3:"-50"};
+ Object.entries(vals).forEach(([id,v])=>document.getElementById(id).value=v);
+ document.getElementById("riskAuditResult").textContent="Default test restored: -$80, -$70, -$50 = -$200. Run audit to check the block.";
 });
 document.getElementById("resetSLTest").addEventListener("click",()=>{
  const vals={slTestSide:"BUY",slTestEntry:"3645.69",slTestSL:"3600",slTestTP:"3730",slTestOpen:"3640",slTestHigh:"3650",slTestLow:"3595",slTestClose:"3642"};
