@@ -486,6 +486,8 @@ async function fetchYahooHistory(){
   candleData=item.candles.map(x=>({date:x.date,open:+x.open,high:+x.high,low:+x.low,close:+x.close})).filter(x=>[x.open,x.high,x.low,x.close].every(Number.isFinite));
   if(candleData.length<100) throw new Error("Valid candles 100 se kam hain.");
   status.textContent="AUTO DATA LOADED: "+symbol+" | "+candleData.length+" daily candles | "+candleData[0].date+" to "+candleData[candleData.length-1].date+". Ab backtest chalao.";
+  pRender();
+  document.getElementById("paperStatus").textContent="Historical data ready. Paper reference price: $"+money(paperPrice())+" (last daily close; not live).";
  }catch(err){
   status.textContent="Data abhi ready nahi hai: "+err.message+" GitHub par Actions > Refresh historical market data > Run workflow karo. Ek baar successful hone ke baad CSV upload ki zarurat nahi.";
  }finally{btn.disabled=false;btn.textContent="Load 10 Years Data Automatically";}
