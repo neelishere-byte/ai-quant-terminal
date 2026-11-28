@@ -538,19 +538,15 @@ function todayLoss(){const d=pdate();return paper.history.filter(t=>t.date===d).
 function pRender(){
  const px=paperPrice(),eq=pEquity();paper.peak=Math.max(paper.peak||paper.initial,eq);savePaper();
  const dd=paper.peak>0?(paper.peak-eq)/paper.peak*100:0;
- document.getElementById("paperStats").innerHTML=
- '<div class="card"><b>Virtual Balance</b><h3>
-</body>
-</html>
-+money(paper.balance)+'</h3></div><div class="card"><b>Equity</b><h3>
-</body>
-</html>
-+money(eq)+'</h3></div><div class="card"><b>Unrealized P&L</b><h3>
-</body>
-</html>
-+money(pUnrealized())+'</h3></div><div class="card"><b>Open Positions</b><h3>'+paper.positions.length+'</h3></div><div class="card"><b>Drawdown</b><h3>'+dd.toFixed(2)+'%</h3></div>';
- document.getElementById("paperOpen").innerHTML=paper.positions.length?'<table style="width:100%;border-collapse:collapse"><tr><th>Side</th><th>Qty</th><th>Entry</th><th>SL</th><th>TP</th><th>Mark</th><th>Unrealized</th><th></th></tr>'+paper.positions.map(p=>'<tr><td>'+p.side+'</td><td>'+p.qty+'</td><td>'+money(p.entry)+'</td><td>'+ (p.sl||"-")+'</td><td>'+(p.tp||"-")+'</td><td>'+money(px||p.entry)+'</td><td>'+money((p.side==="BUY"?1:-1)*((px||p.entry)-p.entry)*p.qty)+'</td><td><button type="button" onclick="paperClose(\''+p.id+'\')">Close</button></td></tr>').join("")+'</table>':'<p class="muted">No open positions.</p>';
- document.getElementById("paperHistory").innerHTML=paper.history.length?'<table style="width:100%;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>Net P&L</th><th>Reason</th></tr>'+paper.history.slice(-30).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.qty+'</td><td>'+money(t.entry)+'</td><td>'+money(t.exit)+'</td><td>'+money(t.pnl)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table>':'<p class="muted">No closed trades yet.</p>';
+ document.getElementById("paperStats").innerHTML=[
+  '<div class="card"><b>Virtual Balance</b><h3>$'+money(paper.balance)+'</h3></div>',
+  '<div class="card"><b>Equity</b><h3>$'+money(eq)+'</h3></div>',
+  '<div class="card"><b>Unrealized P&amp;L</b><h3>$'+money(pUnrealized())+'</h3></div>',
+  '<div class="card"><b>Open Positions</b><h3>'+paper.positions.length+'</h3></div>',
+  '<div class="card"><b>Drawdown</b><h3>'+dd.toFixed(2)+'%</h3></div>'
+ ].join("");
+ document.getElementById("paperOpen").innerHTML=paper.positions.length?'<table style="width:100%;border-collapse:collapse"><tr><th>Side</th><th>Qty</th><th>Entry</th><th>SL</th><th>TP</th><th>Mark</th><th>Unrealized</th><th>Action</th></tr>'+paper.positions.map(p=>'<tr><td>'+p.side+'</td><td>'+p.qty+'</td><td>'+money(p.entry)+'</td><td>'+(p.sl||"-")+'</td><td>'+(p.tp||"-")+'</td><td>'+money(px||p.entry)+'</td><td>'+money((p.side==="BUY"?1:-1)*((px||p.entry)-p.entry)*p.qty)+'</td><td><button type="button" onclick="paperClose(\''+p.id+'\')">Close</button></td></tr>').join("")+'</table>':'<p class="muted">No open positions.</p>';
+ document.getElementById("paperHistory").innerHTML=paper.history.length?'<table style="width:100%;border-collapse:collapse"><tr><th>Date</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>Net P&amp;L</th><th>Reason</th></tr>'+paper.history.slice(-30).reverse().map(t=>'<tr><td>'+t.date+'</td><td>'+t.side+'</td><td>'+t.qty+'</td><td>'+money(t.entry)+'</td><td>'+money(t.exit)+'</td><td>'+money(t.pnl)+'</td><td>'+t.reason+'</td></tr>').join("")+'</table>':'<p class="muted">No closed trades yet.</p>';
 }
 function pBlocked(){
  const d=pnum("paperDaily"),m=pnum("paperDD"),eq=pEquity(),dd=paper.peak>0?(paper.peak-eq)/paper.peak*100:0;
