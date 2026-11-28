@@ -605,7 +605,7 @@ function pBlocked(){
  if(m>0&&dd>=m)return "Maximum drawdown limit reached. New entries blocked.";
  return "";
 }
-function paperRiskCheck(side,qty,ref,sl){
+function paperRiskSizing(side,ref,sl){
  const riskPct=pnum("paperRisk"),c=paperCosts(),dir=side==="BUY"?1:-1;
  if(!(Number.isFinite(riskPct)&&riskPct>=0.1&&riskPct<=5))return {ok:false,message:"Risk per trade 0.1% se 5% ke beech rakhein."};
  if(!(Number.isFinite(sl)&&sl>0))return {ok:false,message:"Har Demo Order ke liye Stop Loss zaroori hai."};
@@ -615,10 +615,15 @@ function paperRiskCheck(side,qty,ref,sl){
  const riskPerUnit=dir*(entry-stopExit)+entry*c.fee+stopExit*c.fee;
  if(!(riskPerUnit>0&&Number.isFinite(riskPerUnit)))return {ok:false,message:"Estimated per-unit risk valid nahi hai."};
  const budget=paper.balance*riskPct/100,maxQty=Math.floor(Math.min(budget/riskPerUnit,paper.balance/entry)*10000)/10000;
- const estimatedLoss=qty*riskPerUnit;
+ return {ok:true,entry,stopExit,riskPerUnit,budget,maxQty};
+}
+function paperRiskCheck(side,qty,ref,sl){
+ const sizing=paperRiskSizing(side,ref,sl);
+ if(!sizing.ok)return sizing;
  if(!(qty>0&&Number.isFinite(qty)))return {ok:false,message:"Quantity valid honi chahiye."};
- if(qty>maxQty+1e-8)return {ok:false,message:"Order blocked: quantity risk limit se zyada hai. Max allowed approx "+maxQty.toFixed(4)+" units; estimated SL loss $"+money(estimatedLoss)+" vs budget $"+money(budget)+"."};
- return {ok:true,maxQty,budget,estimatedLoss};
+ const estimatedLoss=qty*sizing.riskPerUnit;
+ if(qty>sizing.maxQty+1e-8)return {ok:false,message:"Order blocked: quantity risk limit se zyada hai. Max allowed approx "+sizing.maxQty.toFixed(4)+" units; estimated SL loss $"+money(estimatedLoss)+" vs budget $"+money(sizing.budget)+"."};
+ return {ok:true,maxQty:sizing.maxQty,budget:sizing.budget,estimatedLoss};
 }
 function paperOpen(side,qty,ref,sl,tp){
  const riskCheck=paperRiskCheck(side,qty,ref,sl);if(!riskCheck.ok)throw new Error(riskCheck.message);
@@ -667,13 +672,12 @@ document.getElementById("paperSubmit").addEventListener("click",()=>{
 document.getElementById("paperCalcQty").addEventListener("click",()=>{
  try{
   if(!candleData.length)throw new Error("Pehle historical market data load karein.");
-  const px=paperPrice(),sl=pnum("paperSL"),risk=pnum("paperRisk"),side=document.getElementById("paperSide").value;
-  if(!(sl>0)||!(risk>0))throw new Error("Quantity calculate karne ke liye Stop Loss aur risk % enter karein.");
-  if((side==="BUY"&&sl>=px)||(side==="SELL"&&sl<=px))throw new Error("BUY ke liye SL price se neeche, SELL ke liye upar hona chahiye.");
-  const qty=Math.floor(Math.min((paper.balance*risk/100)/Math.abs(px-sl),paper.balance/px)*10000)/10000;
+  const px=paperPrice(),sl=pnum("paperSL"),side=document.getElementById("paperSide").value;
+  const sizing=paperRiskSizing(side,px,sl);if(!sizing.ok)throw new Error(sizing.message);
+  const qty=sizing.maxQty;
   if(!(qty>0))throw new Error("Calculated quantity bahut chhoti hai.");
-  document.getElementById("paperQty").value=qty;
-  document.getElementById("paperStatus").textContent="Suggested quantity "+qty+" units. Estimated stop risk approx $"+money(qty*Math.abs(px-sl))+"; cash exposure capped to 1x.";
+  document.getElementById("paperQty").value=qty.toFixed(4);
+  document.getElementById("paperStatus").textContent="Suggested quantity "+qty.toFixed(4)+" units. Estimated SL loss incl. spread, slippage and round-trip fees: $"+money(qty*sizing.riskPerUnit)+" / budget $"+money(sizing.budget)+"; cash exposure capped to 1x.";
  }catch(e){document.getElementById("paperStatus").textContent=e.message;}
 });
 window.paperSaveStops=function(id){
