@@ -693,17 +693,16 @@ document.getElementById("runDDAudit").addEventListener("click",()=>{
  if(!(Number.isFinite(start)&&start>0&&Number.isFinite(limit)&&limit>0&&limit<=1&&trades.every(Number.isFinite))){
   out.textContent="Valid balance, limit (0.1%–100%) aur trade P&L values enter karein.";return;
  }
- let equity=start,peak=start,blockedAt=0;
+ let equity=start,peak=start,blockedAt=0,locked=false;
  const threshold=limit;
  const rows=trades.map((p,i)=>{
   equity+=p;
   peak=Math.max(peak,equity);
   const dd=peak>0?(peak-equity)/peak:1;
-  const blocked=dd>=threshold;
-  if(blocked&&!blockedAt)blockedAt=i+1;
-  return "Trade "+(i+1)+": P&L $"+money(p)+" | Equity $"+money(equity)+" | Peak $"+money(peak)+" | Drawdown "+(dd*100).toFixed(2)+"% | "+(blocked?"NEW ENTRY BLOCKED":"Entry allowed");
+  if(!locked&&dd>=threshold){locked=true;blockedAt=i+1;}
+  return "Trade "+(i+1)+": P&L $"+money(p)+" | Equity $"+money(equity)+" | Peak $"+money(peak)+" | Drawdown "+(dd*100).toFixed(2)+"% | "+(locked?"NEW ENTRY BLOCKED":"Entry allowed");
  });
- const blocked=rows.length>0&&((peak-equity)/peak>=threshold || blockedAt>0);
+ const blocked=locked;
  out.innerHTML="<b>Audit "+(blocked?"PASSED":"NOT TRIGGERED")+"</b><br>Maximum drawdown limit: "+(limit*100).toFixed(2)+"%<br>"+rows.join("<br>")+"<br><b>New order after these trades: "+(blocked?"BLOCKED":"NOT BLOCKED")+"</b><br>"+(blocked?"Limit first reached after trade "+blockedAt+".":"Drawdown limit was not reached; increase losses or lower the limit.")+"<br>Independent test only — Demo Account unchanged.";
 });
 document.getElementById("resetDDAudit").addEventListener("click",()=>{
