@@ -159,6 +159,20 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
  <div id="paperStats" class="grid"></div>
  <h3>Open Positions / Pending Orders</h3><div id="paperOpen" style="overflow:auto"></div>
  <h3>Closed Trade History</h3><div id="paperHistory" style="overflow:auto"></div>
+ <h3>SL / TP Testing Simulator — No Account Impact</h3>
+ <p class="muted">Hypothetical OHLC test only. It does not open or close demo positions or change balance/history.</p>
+ <div class="grid">
+  <div><label>Side</label><select id="slTestSide"><option value="BUY">BUY / Long</option><option value="SELL">SELL / Short</option></select></div>
+  <div><label>Entry price (USD)</label><input id="slTestEntry" type="number" value="3645.69" step="0.01"></div>
+  <div><label>Stop Loss (USD)</label><input id="slTestSL" type="number" value="3600" step="0.01"></div>
+  <div><label>Take Profit (USD)</label><input id="slTestTP" type="number" value="3730" step="0.01"></div>
+  <div><label>Candle Open</label><input id="slTestOpen" type="number" value="3640" step="0.01"></div>
+  <div><label>Candle High</label><input id="slTestHigh" type="number" value="3650" step="0.01"></div>
+  <div><label>Candle Low</label><input id="slTestLow" type="number" value="3595" step="0.01"></div>
+  <div><label>Candle Close</label><input id="slTestClose" type="number" value="3642" step="0.01"></div>
+ </div>
+ <div class="row"><button id="runSLTest" type="button">Run SL / TP Test</button><button id="resetSLTest" type="button">Reset Test Values</button></div>
+ <div id="slTestResult" class="status" aria-live="polite">Default example: BUY Stop Loss should trigger at $3,600 before estimated costs.</div>
 </div>
 </div>
 </main>
@@ -647,6 +661,26 @@ document.getElementById("paperReset").addEventListener("click",()=>{
  paper={balance:start,initial:start,peak:start,positions:[],history:[],orders:[]};savePaper();pRender();document.getElementById("paperStatus").textContent="Demo account reset.";
 });
 document.getElementById("paperStart").addEventListener("change",()=>{if(!paper.history.length&&!paper.positions.length&&!paper.orders.length){const v=pnum("paperStart");if(v>0){paper.balance=paper.initial=paper.peak=v;savePaper();pRender();}}});
+document.getElementById("runSLTest").addEventListener("click",()=>{
+ const val=id=>Number(document.getElementById(id).value);
+ const side=document.getElementById("slTestSide").value,entry=val("slTestEntry"),sl=val("slTestSL"),tp=val("slTestTP"),o=val("slTestOpen"),h=val("slTestHigh"),l=val("slTestLow"),cl=val("slTestClose");
+ const out=document.getElementById("slTestResult");
+ if(![entry,sl,tp,o,h,l,cl].every(Number.isFinite)||![entry,sl,tp,o,h,l,cl].every(x=>x>0)){out.textContent="Sabhi price fields mein valid positive numbers dalein.";return;}
+ if(h<Math.max(o,cl,l)||l>Math.min(o,cl,h)){out.textContent="Invalid OHLC: High sabhi prices se bada aur Low sabhi prices se chhota/equal hona chahiye.";return;}
+ if(side==="BUY"?(sl>=entry||tp<=entry):(sl<=entry||tp>=entry)){out.textContent="Invalid levels: BUY ke liye SL < Entry < TP; SELL ke liye TP < Entry < SL.";return;}
+ const stop=side==="BUY"?l<=sl:h>=sl,target=side==="BUY"?h>=tp:l<=tp;
+ if(!stop&&!target){out.textContent="No exit: is candle mein SL ya TP hit nahi hua. Account par koi asar nahi.";return;}
+ const isStop=stop,level=isStop?sl:tp;let fill=level;
+ if(side==="BUY"){if(isStop&&o<level)fill=o;if(!isStop&&o>level)fill=o;}
+ else{if(isStop&&o>level)fill=o;if(!isStop&&o<level)fill=o;}
+ const move=side==="BUY"?fill-entry:entry-fill,both=stop&&target;
+ out.innerHTML="<b>Result: "+(isStop?"STOP LOSS HIT":"TAKE PROFIT HIT")+"</b><br>Simulated reference exit: $"+money(fill)+"<br>Price P&amp;L per unit before costs: $"+money(move)+"<br>"+(both?"Both levels candle range mein the; conservative rule ke mutabik SL first assume kiya. ":"")+(fill!==level?"Gap ke karan candle open fill hua. ":"Level fill used. ")+"Demo balance, positions aur history unchanged.";
+});
+document.getElementById("resetSLTest").addEventListener("click",()=>{
+ const vals={slTestSide:"BUY",slTestEntry:"3645.69",slTestSL:"3600",slTestTP:"3730",slTestOpen:"3640",slTestHigh:"3650",slTestLow:"3595",slTestClose:"3642"};
+ Object.entries(vals).forEach(([id,v])=>document.getElementById(id).value=v);
+ document.getElementById("slTestResult").textContent="Default example restored. Run test to see the simulated result.";
+});
 pRender();
 
 </script>
