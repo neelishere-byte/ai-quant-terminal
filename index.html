@@ -154,7 +154,7 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
   <div><label>Daily loss limit (%)</label><input id="paperDaily" type="number" value="2" min="0.1" step="0.1"></div>
   <div><label>Max drawdown limit (%)</label><input id="paperDD" type="number" value="10" min="0.1" step="0.1"></div>
  </div>
- <div class="row" style="margin-top:12px"><button id="paperSubmit" type="button">Place Demo Order</button><button id="paperCheck" type="button">Check Latest Candle (fills / SL / TP)</button><button id="paperReset" type="button">Reset Demo Account</button></div>
+ <div class="row" style="margin-top:12px"><button id="paperValidateRisk" type="button">Validate Order Risk (No Order)</button><button id="paperSubmit" type="button">Place Demo Order</button><button id="paperCheck" type="button">Check Latest Candle (fills / SL / TP)</button><button id="paperReset" type="button">Reset Demo Account</button></div>
  <div id="paperStatus" class="status">Load historical market data first. Demo account is stored in this browser.</div>
  <div id="paperStats" class="grid"></div>
  <h3>Open Positions / Pending Orders</h3><div id="paperOpen" style="overflow:auto"></div>
@@ -687,6 +687,23 @@ window.paperSaveStops=function(id){
  if(tp!==null&&(!Number.isFinite(tp)||(p.side==="BUY"?tp<=px:tp>=px))){document.getElementById("paperStatus").textContent="Invalid TP level.";return;}
  p.sl=sl;p.tp=tp;savePaper();pRender();document.getElementById("paperStatus").textContent="SL/TP updated.";
 };
+document.getElementById("paperValidateRisk").addEventListener("click",()=>{
+ try{
+  if(!candleData.length)throw new Error("Pehle Strategy Lab se historical candles load karo.");
+  const side=document.getElementById("paperSide").value,type=document.getElementById("paperType").value;
+  const qty=pnum("paperQty"),sl=pnum("paperSL"),tp=pnum("paperTP"),px=paperPrice();
+  if(!(qty>0&&Number.isFinite(qty)))throw new Error("Quantity 0 se zyada honi chahiye.");
+  if(!(sl>0&&Number.isFinite(sl)))throw new Error("Stop Loss zaroori hai; valid SL enter karein.");
+  if(sl!==null&&((side==="BUY"&&sl>=px)||(side==="SELL"&&sl<=px)))throw new Error("BUY SL current price se neeche aur SELL SL upar rakhein.");
+  if(tp>0&&((side==="BUY"&&tp<=px)||(side==="SELL"&&tp>=px)))throw new Error("BUY TP current price se upar aur SELL TP neeche rakhein.");
+  const ref=type==="LIMIT"?pnum("paperLimit"):px;
+  if(!(ref>0&&Number.isFinite(ref)))throw new Error("Valid limit price enter karein.");
+  const block=pBlocked();if(block)throw new Error(block);
+  const check=paperRiskCheck(side,qty,ref,sl);
+  if(!check.ok)throw new Error(check.message);
+  document.getElementById("paperStatus").textContent="RISK CHECK PASSED — No order placed. Quantity: "+qty.toFixed(4)+" units | Estimated SL loss incl. costs: $"+money(check.estimatedLoss)+" / budget $"+money(check.budget)+" | Max allowed: "+check.maxQty.toFixed(4)+" units | 1x cash cap passed. This check does not reserve risk or guarantee a fill.";
+ }catch(e){document.getElementById("paperStatus").textContent="RISK CHECK FAILED — No order placed. "+e.message;}
+});
 document.getElementById("paperCheck").addEventListener("click",()=>{
  if(!candleData.length){document.getElementById("paperStatus").textContent="Historical candles load karein.";return;}
  const b=candleData[candleData.length-1];let fills=0,exits=0,skipped=0,riskRejected=0;
