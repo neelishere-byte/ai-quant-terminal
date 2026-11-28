@@ -588,6 +588,7 @@ function pRender(){
  const px=paperPrice(),eq=pEquity();paper.peak=Math.max(paper.peak||paper.initial,eq);savePaper();
  const dd=paper.peak>0?(paper.peak-eq)/paper.peak*100:0;
  document.getElementById("paperStats").innerHTML=[
+ '<div class="card"><b>Reference Price (last historical close)</b><h3>'+(px===null?'Not loaded':'$'+money(px))+'</h3></div>',
  '<div class="card"><b>Virtual Balance</b><h3>$'+money(paper.balance)+'</h3></div>',
  '<div class="card"><b>Equity</b><h3>$'+money(eq)+'</h3></div>',
  '<div class="card"><b>Unrealized P&amp;L</b><h3>$'+money(pUnrealized())+'</h3></div>',
