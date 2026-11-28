@@ -170,6 +170,18 @@ footer{text-align:center;color:#9aabc4;padding:25px;font-size:12px}
  </div>
  <div class="row"><button id="runRiskAudit" type="button">Run Daily Loss Limit Audit</button><button id="resetRiskAudit" type="button">Reset Audit Values</button></div>
  <div id="riskAuditResult" class="status" aria-live="polite">Default test: -$80, -$70, -$50 = -$200. A new entry should be blocked at the 2% limit.</div>
+
+ <h3>Risk Management Audit Simulator — Maximum Drawdown (No Account Impact)</h3>
+ <p class="muted">Independent hypothetical equity-curve test. After each closed trade, the simulator updates equity and its highest peak, then checks peak-to-trough drawdown. It does not change the Demo Account.</p>
+ <div class="grid">
+  <div><label>Audit starting balance ($)</label><input id="ddAuditBalance" type="number" value="10000" min="1" step="100"></div>
+  <div><label>Maximum drawdown limit (%)</label><input id="ddAuditLimit" type="number" value="10" min="0.1" max="100" step="0.1"></div>
+  <div><label>Trade 1 realized P&amp;L ($)</label><input id="ddAuditTrade1" type="number" value="-400" step="1"></div>
+  <div><label>Trade 2 realized P&amp;L ($)</label><input id="ddAuditTrade2" type="number" value="-350" step="1"></div>
+  <div><label>Trade 3 realized P&amp;L ($)</label><input id="ddAuditTrade3" type="number" value="-250" step="1"></div>
+ </div>
+ <div class="row"><button id="runDDAudit" type="button">Run Maximum Drawdown Audit</button><button id="resetDDAudit" type="button">Reset Audit Values</button></div>
+ <div id="ddAuditResult" class="status" aria-live="polite">Default test: equity falls from $10,000 to $9,000 (10% drawdown). A new entry should be blocked at the limit.</div>
  <h3>SL / TP Testing Simulator — No Account Impact</h3>
  <p class="muted">Hypothetical OHLC test only. It does not open or close demo positions or change balance/history.</p>
  <div class="grid">
@@ -672,6 +684,33 @@ document.getElementById("paperReset").addEventListener("click",()=>{
  paper={balance:start,initial:start,peak:start,positions:[],history:[],orders:[]};savePaper();pRender();document.getElementById("paperStatus").textContent="Demo account reset.";
 });
 document.getElementById("paperStart").addEventListener("change",()=>{if(!paper.history.length&&!paper.positions.length&&!paper.orders.length){const v=pnum("paperStart");if(v>0){paper.balance=paper.initial=paper.peak=v;savePaper();pRender();}}});
+
+document.getElementById("runDDAudit").addEventListener("click",()=>{
+ const val=id=>Number(document.getElementById(id).value);
+ const start=val("ddAuditBalance"),limit=val("ddAuditLimit")/100;
+ const trades=[val("ddAuditTrade1"),val("ddAuditTrade2"),val("ddAuditTrade3")];
+ const out=document.getElementById("ddAuditResult");
+ if(!(Number.isFinite(start)&&start>0&&Number.isFinite(limit)&&limit>0&&limit<=1&&trades.every(Number.isFinite))){
+  out.textContent="Valid balance, limit (0.1%–100%) aur trade P&L values enter karein.";return;
+ }
+ let equity=start,peak=start,blockedAt=0;
+ const threshold=limit;
+ const rows=trades.map((p,i)=>{
+  equity+=p;
+  peak=Math.max(peak,equity);
+  const dd=peak>0?(peak-equity)/peak:1;
+  const blocked=dd>=threshold;
+  if(blocked&&!blockedAt)blockedAt=i+1;
+  return "Trade "+(i+1)+": P&L $"+money(p)+" | Equity $"+money(equity)+" | Peak $"+money(peak)+" | Drawdown "+(dd*100).toFixed(2)+"% | "+(blocked?"NEW ENTRY BLOCKED":"Entry allowed");
+ });
+ const blocked=rows.length>0&&((peak-equity)/peak>=threshold || blockedAt>0);
+ out.innerHTML="<b>Audit "+(blocked?"PASSED":"NOT TRIGGERED")+"</b><br>Maximum drawdown limit: "+(limit*100).toFixed(2)+"%<br>"+rows.join("<br>")+"<br><b>New order after these trades: "+(blocked?"BLOCKED":"NOT BLOCKED")+"</b><br>"+(blocked?"Limit first reached after trade "+blockedAt+".":"Drawdown limit was not reached; increase losses or lower the limit.")+"<br>Independent test only — Demo Account unchanged.";
+});
+document.getElementById("resetDDAudit").addEventListener("click",()=>{
+ const vals={ddAuditBalance:"10000",ddAuditLimit:"10",ddAuditTrade1:"-400",ddAuditTrade2:"-350",ddAuditTrade3:"-250"};
+ Object.entries(vals).forEach(([id,v])=>document.getElementById(id).value=v);
+ document.getElementById("ddAuditResult").textContent="Default test restored: -$400, -$350, -$250 = -$1,000. Run audit to check the block.";
+});
 document.getElementById("runSLTest").addEventListener("click",()=>{
  const val=id=>Number(document.getElementById(id).value);
  const side=document.getElementById("slTestSide").value,entry=val("slTestEntry"),sl=val("slTestSL"),tp=val("slTestTP"),o=val("slTestOpen"),h=val("slTestHigh"),l=val("slTestLow"),cl=val("slTestClose");
