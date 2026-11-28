@@ -565,8 +565,9 @@ function paperOpen(side,qty,ref,sl,tp){
 function paperClose(id,reason="Manual close",forcedRef=null){
  const i=paper.positions.findIndex(p=>p.id===id);if(i<0)return;
  const p=paper.positions[i],bar=candleData[candleData.length-1],ref=Number.isFinite(forcedRef)?forcedRef:(bar?bar.close:p.entry),c=paperCosts(),dir=p.side==="BUY"?1:-1;
- const exit=ref*(1-dir*(c.spread/2+c.slip)),gross=dir*(exit-p.entry)*p.qty,fee=Math.abs(exit*p.qty)*c.fee,net=gross-fee;
- paper.balance+=gross-fee;paper.history.push({date:pdate(),side:p.side,qty:p.qty,entry:p.entry,exit,pnl:net,reason});
+ const exit=ref*(1-dir*(c.spread/2+c.slip)),gross=dir*(exit-p.entry)*p.qty,exitFee=Math.abs(exit*p.qty)*c.fee,net=gross-exitFee-(p.fee||0);
+ paper.balance+=gross-exitFee;
+ paper.history.push({date:pdate(),side:p.side,qty:p.qty,entry:p.entry,exit,pnl:net,entryFee:p.fee||0,exitFee,reason});
  paper.positions.splice(i,1);paper.peak=Math.max(paper.peak,paper.balance+pUnrealized());savePaper();pRender();
 }
 window.paperClose=paperClose;
@@ -612,14 +613,33 @@ window.paperSaveStops=function(id){
 };
 document.getElementById("paperCheck").addEventListener("click",()=>{
  if(!candleData.length){document.getElementById("paperStatus").textContent="Historical candles load karein.";return;}
- const b=candleData[candleData.length-1];let fills=0,exits=0;
- paper.orders=paper.orders.filter(o=>{if(b.low<=o.limit&&b.high>=o.limit){paperOpen(o.side,o.qty,o.limit,o.sl,o.tp);fills++;return false;}return true;});
+ const b=candleData[candleData.length-1];let fills=0,exits=0,skipped=0;
+ paper.orders=paper.orders.filter(o=>{
+  if(String(o.createdDate)>=String(b.date)){skipped++;return true;}
+  if(b.low<=o.limit&&b.high>=o.limit){paperOpen(o.side,o.qty,o.limit,o.sl,o.tp);fills++;return false;}
+  return true;
+ });
  paper.positions.slice().forEach(p=>{
-  const stop=p.sl!==null&&(p.side==="BUY"?b.low<=p.sl:b.high>=p.sl),target=p.tp!==null&&(p.side==="BUY"?b.high>=p.tp:b.low<=p.tp);
-  if(stop||target){paperClose(p.id,stop?"Stop Loss (bar simulation)":"Take Profit (bar simulation)");exits++;}
+  // Do not evaluate the same daily candle used to create the position (prevents look-ahead exits).
+  if(String(p.date)>=String(b.date)){skipped++;return;}
+  const stop=p.sl!==null&&(p.side==="BUY"?b.low<=p.sl:b.high>=p.sl);
+  const target=p.tp!==null&&(p.side==="BUY"?b.high>=p.tp:b.low<=p.tp);
+  if(stop||target){
+   const isStop=stop; // If both levels are touched in one OHLC candle, assume the adverse SL happened first.
+   const level=isStop?p.sl:p.tp;
+   let fill=level;
+   if(p.side==="BUY"){
+    if(isStop&&b.open<level)fill=b.open;       // gap below a long stop: worse opening price
+    if(!isStop&&b.open>level)fill=b.open;     // favorable gap through long target
+   }else{
+    if(isStop&&b.open>level)fill=b.open;     // gap above a short stop: worse opening price
+    if(!isStop&&b.open<level)fill=b.open;    // favorable gap through short target
+   }
+   paperClose(p.id,isStop?"Stop Loss (bar simulation)":"Take Profit (bar simulation)",fill);exits++;
+  }
  });
  paper.peak=Math.max(paper.peak,pEquity());savePaper();pRender();
- document.getElementById("paperStatus").textContent="Checked candle "+pdate()+". Limit fills: "+fills+" | SL/TP exits: "+exits+". If both SL and TP fall inside one daily candle, SL is conservatively assumed first.";
+ document.getElementById("paperStatus").textContent="Checked candle "+pdate()+". Limit fills: "+fills+" | SL/TP exits: "+exits+" | Same-candle entries skipped: "+skipped+". SL is assumed first if both SL and TP fall inside one daily candle; gap fills use candle open.";
 });
 document.getElementById("paperReset").addEventListener("click",()=>{
  if(!confirm("Reset virtual account, open positions and history?"))return;
